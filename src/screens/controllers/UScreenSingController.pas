@@ -83,6 +83,8 @@ type
     procedure ClearLyricEngines();
     procedure CalculateStartTime;
     procedure SaveLocalScores;
+    function PartyRoundSavesHighscores: boolean;
+    function GetHighscoreName(PlayerIndex: integer): UTF8String;
   public
     CheckPlayerConfigOnNextSong: boolean;
     eSongLoaded: THookableEvent; //< event is called after lyrics of a song are loaded on OnShow
@@ -1604,6 +1606,12 @@ begin
   AudioPlayback.Stop;
   AudioPlayback.SetSyncSource(nil);
 
+  // party mode: completed rounds of comparable round types are also
+  // saved to the normal local highscores (see PartyRoundSavesHighscores)
+  if (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and SungToEnd
+    and PartyRoundSavesHighscores then
+    SaveLocalScores;
+
   if (ScreenSong.Mode = smNormal) and SungToEnd then
   begin
     SaveLocalScores;
@@ -1895,6 +1903,7 @@ var
   I: integer;
   Sung: boolean;
   Score: integer;
+  ScoreName: UTF8String;
 begin
   Sung := false;
 
@@ -1903,9 +1912,11 @@ begin
     for I := 0 to PlayersPlay - 1 do
     begin
       Score := Round(Player[I].ScoreTotalInt);
-      if Score > 0 then
+      ScoreName := GetHighscoreName(I);
+      // no score without a personal name (never save under a team name)
+      if (Score > 0) and (ScoreName <> '') then
       begin
-        DataBase.AddScore(CurrentSong, Player[I].Level, Length(CurrentSong.Tracks), 1 shl Player[I].Track, Player[I].Name, Score);
+        DataBase.AddScore(CurrentSong, Player[I].Level, Length(CurrentSong.Tracks), 1 shl Player[I].Track, ScoreName, Score);
         Sung := true;
       end;
     end;
@@ -1913,6 +1924,63 @@ begin
 
   if Sung then
     DataBase.WriteScore(CurrentSong);
+end;
+
+{ Returns true if the party round that was just played may be saved to the
+  normal local highscores. Only round types with a complete song and the
+  normal scoring are allowed. For random rounds the actually played mode is
+  stored in Party.Rounds, so it is checked here as well. }
+function TScreenSingController.PartyRoundSavesHighscores: boolean;
+const
+  // names of the party modes (Mode.Name in game/plugins/*.usdx), lower case
+  ALLOWED_MODES: array[0..4] of string = (
+    'duel',        // Duel
+    'blind',       // Blind (notes hidden)
+    'blindlyrics', // Blind (lyrics hidden)
+    'blindtotal',  // Blind (notes and lyrics hidden)
+    'deaf'         // music muted at times, normal scoring
+  );
+var
+  RoundIdx, ModeIndex, I: integer;
+  ModeName: string;
+begin
+  Result := false;
+  if not Party.bPartyGame then
+    Exit;
+
+  RoundIdx := Party.CurrentRound;
+  if (RoundIdx < 0) or (RoundIdx > High(Party.Rounds)) then
+    Exit;
+
+  ModeIndex := Party.Rounds[RoundIdx].Mode;
+  if (ModeIndex < 0) or (ModeIndex > High(Party.Modes)) then
+    Exit;
+
+  ModeName := LowerCase(Party.Modes[ModeIndex].Name);
+  for I := Low(ALLOWED_MODES) to High(ALLOWED_MODES) do
+    if (ModeName = ALLOWED_MODES[I]) then
+    begin
+      Result := true;
+      Exit;
+    end;
+end;
+
+{ Name under which the score of Player[PlayerIndex] is saved.
+  Normal mode: the player name. Party mode: Player[I] belongs to team I, so
+  the name of the team member who sang this round is used. If there is no
+  personal name, an empty string is returned and the score is not saved. }
+function TScreenSingController.GetHighscoreName(PlayerIndex: integer): UTF8String;
+begin
+  Result := Player[PlayerIndex].Name;
+
+  if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+  begin
+    Result := '';
+    if (PlayerIndex >= 0) and (PlayerIndex <= High(Party.Teams)) then
+      with Party.Teams[PlayerIndex] do
+        if (NextPlayer >= 0) and (NextPlayer <= High(Players)) then
+          Result := UTF8String(Trim(Players[NextPlayer].Name));
+  end;
 end;
 
 procedure TScreenSingController.AutoSendScore;
