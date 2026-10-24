@@ -819,7 +819,7 @@ begin
 
   // retrieve current lyrics time, we have to store the value to avoid
   // that min- and sec-values do not match
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     CurLyricsTime := LyricsState.GetCurrentTime() - ScreenSing.MedleyStart;
     TotalTime := ScreenSing.MedleyEnd - ScreenSing.MedleyStart;
@@ -889,12 +889,12 @@ begin
 
   // for medley-mode:
   CurLyricsTime := LyricsState.GetCurrentTime();
-  if (ScreenSong.Mode = smMedley) and (CurLyricsTime > ScreenSing.MedleyEnd) then
+  if ScreenSong.MedleyActive and (CurLyricsTime > ScreenSing.MedleyEnd) then
     medley_end := true
   else
     medley_end := false;
 
-  if (ScreenSong.Mode = smMedley) and (CurLyricsTime >
+  if ScreenSong.MedleyActive and (CurLyricsTime >
     GetTimeFromBeat(CurrentSong.Medley.EndBeat)) then
     medley_start_applause := true
   else
@@ -933,7 +933,7 @@ begin
   ScreenSing.DrawFG;
 
   //Medley Countdown
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
     DrawMedleyCountdown;
   if ScreenSing.CountIn then
     DrawCountIn;
@@ -942,7 +942,7 @@ begin
   //Log.LogError('Check for music finish: ' + BoolToStr(Music.Finished) + ' ' + FloatToStr(LyricsState.CurrentTime*1000) + ' ' + IntToStr(CurrentSong.Finish));
   if ScreenSing.ShowFinish then
   begin
-    if (not ScreenSing.FinishedMusic) and (not medley_end or (ScreenSong.Mode <> smMedley)) and
+    if (not ScreenSing.FinishedMusic) and (not medley_end or not ScreenSong.MedleyActive) and
        ((CurrentSong.Finish = 0) or
         (LyricsState.GetCurrentTime() * 1000 <= CurrentSong.Finish)) and
        (not ScreenSing.Settings.Finish) then
@@ -953,7 +953,7 @@ begin
         Sing(ScreenSing);
 
         //Update Medley Stats
-        if (ScreenSong.Mode = smMedley) and not ScreenSing.FadeOut then
+        if ScreenSong.MedleyActive and not ScreenSing.FadeOut then
           ScreenSing.UpdateMedleyStats(medley_start_applause);
 
         Party.CallOnSing;
@@ -1254,7 +1254,7 @@ begin
   h := Theme.Sing.StaticTimeProgress.h;
 
   //calculate total singing beats of song
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     SongStart := ScreenSing.MedleyStart * CurrentSong.BPM / 60;
     SongEnd := ScreenSing.MedleyEnd * CurrentSong.BPM / 60;
@@ -1287,7 +1287,7 @@ begin
     for LineIndex := 0 to numLines - 1 do
     begin
       if (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes = nil) then Continue;
-      if (ScreenSong.Mode = smMedley) and (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[0].StartBeat < CurrentSong.Medley.StartBeat) then Continue;
+      if ScreenSong.MedleyActive and (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[0].StartBeat < CurrentSong.Medley.StartBeat) then Continue;
       pos := (gapInBeats + CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[0].StartBeat - SongStart) / SongDuration*w;
       br := (CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].HighNote].StartBeat +
                 CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].Notes[CurrentSong.Tracks[CurrentTrack].Lines[LineIndex].HighNote].Duration -

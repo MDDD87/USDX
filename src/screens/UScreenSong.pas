@@ -96,6 +96,11 @@ type
 
       MakeMedley:   boolean;
 
+      // party medley round (Feature 3): the medley engine is used while
+      // Mode stays smPartyClassic/smPartyFree
+      PartyMedley:  boolean;
+      PartyMedleyFailedRound: integer; // round in which a medley could not be built
+
       //Video Icon Mod
       VideoIcon: cardinal;
 
@@ -308,6 +313,17 @@ type
       //Medley
       function  EnsureMedleyData(SongIndex: integer; MinSource: TMedleySource): boolean;
       procedure StartMedley(NumSongs: integer; MinSource: TMedleySource);
+
+      { true if the medley engine is active: normal medley mode or a
+        party medley round }
+      function  MedleyActive: boolean;
+      { party medley: true if song SongIndex belongs to the song pool that
+        was chosen when the party was started (all songs, category, playlist) }
+      function  InPartySongPool(SongIndex: integer): boolean;
+      { party medley: builds the medley playlist, FirstSong is the song that
+        was selected on the song screen. Returns false if fewer than two
+        suitable songs were found. }
+      function  PreparePartyMedley(FirstSong: integer): boolean;
       function  getVisibleMedleyArr(MinSource: TMedleySource): TVisArr;
 
       procedure ColorDuetNameSingers;
@@ -1755,6 +1771,9 @@ var
 begin
   inherited Create;
 
+  PartyMedley := false;
+  PartyMedleyFailedRound := -1;
+
   LoadFromTheme(Theme.Song);
 
   TextArtist := AddText(Theme.Song.TextArtist);
@@ -2989,6 +3008,8 @@ begin
   // reset Medley-Playlist
   SetLength(PlaylistMedley.Song, 0);
   MakeMedley := false;
+  PartyMedley := false;
+  PartyMedleyFailedRound := -1;
 
   if Mode = smMedley then
     Mode := smNormal;
@@ -4186,13 +4207,166 @@ end;
 procedure TScreenSong.StartSong;
 begin
   CatSongs.Selected := Interaction;
+  PartyMedley := false;
 
-  if (Mode = smPartyFree) then
+  // party medley round: build the medley from the party song pool
+  if (Mode in [smPartyClassic, smPartyFree]) and Party.IsMedleyRound and
+     (PartyMedleyFailedRound <> Party.CurrentRound) then
+  begin
+    if not PreparePartyMedley(Interaction) then
+    begin
+      // not enough suitable songs: tell the user. Confirming the song
+      // again plays it as a normal round, so the party can go on.
+      PartyMedleyFailedRound := Party.CurrentRound;
+      ScreenPopupError.ShowPopup(Language.Translate('PARTY_MEDLEY_NOT_ENOUGH_SONGS'));
+      Exit;
+    end;
+  end;
+
+  if (Mode = smPartyFree) and not PartyMedley then
     Party.SaveSungPartySong(Interaction);
 
   StopMusicPreview();
 
   FadeTo(@ScreenSing);
+end;
+
+function TScreenSong.MedleyActive: boolean;
+begin
+  Result := (Mode = smMedley) or PartyMedley;
+end;
+
+function TScreenSong.InPartySongPool(SongIndex: integer): boolean;
+var
+  I: integer;
+begin
+  Result := false;
+  if (SongIndex < 0) or (SongIndex > High(CatSongs.Song)) or CatSongs.Song[SongIndex].Main then
+    Exit;
+
+  case PlaylistMan.Mode of
+    smCategory:
+      begin
+        // the category is the nearest category button above the song
+        for I := SongIndex downto 0 do
+          if CatSongs.Song[I].Main then
+          begin
+            Result := (I = PlaylistMan.CurPlayList);
+            Exit;
+          end;
+      end;
+    smPlaylist:
+      begin
+        if (PlaylistMan.CurPlayList >= 0) and (PlaylistMan.CurPlayList <= High(PlaylistMan.Playlists)) then
+          for I := 0 to High(PlaylistMan.Playlists[PlaylistMan.CurPlayList].Items) do
+            if (PlaylistMan.Playlists[PlaylistMan.CurPlayList].Items[I].SongID = SongIndex) then
+            begin
+              Result := true;
+              Exit;
+            end;
+      end;
+    else // smAll
+      Result := true;
+  end;
+end;
+
+function TScreenSong.PreparePartyMedley(FirstSong: integer): boolean;
+const
+  PARTY_MEDLEY_SONGS = 5; // number of songs in a party medley (SingStar: 5)
+var
+  Unsung, Sung: TVisArr;
+  I, J, SongNr: integer;
+  AlreadySung: boolean;
+
+  function Contains(SongIndex: integer): boolean;
+  var
+    K: integer;
+  begin
+    Result := false;
+    for K := 0 to High(PlaylistMedley.Song) do
+      if (PlaylistMedley.Song[K] = SongIndex) then
+        Exit(true);
+  end;
+
+  procedure TryAdd(SongIndex: integer);
+  begin
+    if (SongIndex < 0) or (SongIndex > High(CatSongs.Song)) then
+      Exit;
+    if CatSongs.Song[SongIndex].Main or CatSongs.Song[SongIndex].isDuet or Contains(SongIndex) then
+      Exit;
+    // uses the medley section of the song file or the calculated one
+    if not EnsureMedleyData(SongIndex, msCalculated) then
+      Exit;
+    SetLength(PlaylistMedley.Song, Length(PlaylistMedley.Song) + 1);
+    PlaylistMedley.Song[High(PlaylistMedley.Song)] := SongIndex;
+  end;
+
+  function TakeRandom(var Candidates: TVisArr): integer;
+  var
+    K: integer;
+  begin
+    K := Random(Length(Candidates));
+    Result := Candidates[K];
+    Candidates[K] := Candidates[High(Candidates)];
+    SetLength(Candidates, Length(Candidates) - 1);
+  end;
+
+begin
+  Result := false;
+  MakeMedley := false;
+  SetLength(PlaylistMedley.Song, 0);
+
+  // the selected song is the first song of the medley
+  TryAdd(FirstSong);
+
+  // candidates from the party song pool, songs not yet sung in this party first
+  SetLength(Unsung, 0);
+  SetLength(Sung, 0);
+  for I := 0 to High(CatSongs.Song) do
+  begin
+    if (I = FirstSong) or CatSongs.Song[I].Main or CatSongs.Song[I].isDuet or not InPartySongPool(I) then
+      Continue;
+
+    AlreadySung := false;
+    for J := 0 to High(Party.SungPartySongs) do
+      if (Party.SungPartySongs[J] = I) then
+      begin
+        AlreadySung := true;
+        Break;
+      end;
+
+    if AlreadySung then
+    begin
+      SetLength(Sung, Length(Sung) + 1);
+      Sung[High(Sung)] := I;
+    end
+    else
+    begin
+      SetLength(Unsung, Length(Unsung) + 1);
+      Unsung[High(Unsung)] := I;
+    end;
+  end;
+
+  while (Length(PlaylistMedley.Song) < PARTY_MEDLEY_SONGS) and (Length(Unsung) > 0) do
+    TryAdd(TakeRandom(Unsung));
+  while (Length(PlaylistMedley.Song) < PARTY_MEDLEY_SONGS) and (Length(Sung) > 0) do
+    TryAdd(TakeRandom(Sung));
+
+  // a medley needs at least two songs
+  if (Length(PlaylistMedley.Song) < 2) then
+  begin
+    SetLength(PlaylistMedley.Song, 0);
+    PlaylistMedley.NumMedleySongs := 0;
+    Exit;
+  end;
+
+  PlaylistMedley.NumMedleySongs := Length(PlaylistMedley.Song);
+  for SongNr := 0 to High(PlaylistMedley.Song) do
+    Party.SaveSungPartySong(PlaylistMedley.Song[SongNr]);
+
+  CatSongs.Selected := PlaylistMedley.Song[0];
+  PartyMedley := true;
+  Result := true;
 end;
 
 procedure TScreenSong.SelectPlayers;

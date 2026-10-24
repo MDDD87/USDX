@@ -219,6 +219,23 @@ type
     procedure SaveSungPartySong(ID: integer);
     function SongNotSungAndNotDuet(ID, N_DuetSongs: integer): boolean;
 
+    { name of the party mode of the current round in lower case
+      (Mode.Name in game/plugins/*.usdx), '' if there is no current round.
+      For random rounds this is the mode that is actually played. }
+    function CurrentModeName: string;
+
+    { true if the current round is a medley round (game/plugins/medley.usdx) }
+    function IsMedleyRound: boolean;
+
+    { central decision whether the current round may be saved to (and
+      shown in) the normal local highscores. Only round types with a
+      complete song and the normal scoring are allowed. }
+    function RoundSavesHighscores: boolean;
+
+    { personal name of the team member of team Team who sings the current
+      round, '' if there is none }
+    function GetSingerName(Team: integer): UTF8String;
+
     destructor  Destroy; override;
   end;
 
@@ -942,7 +959,12 @@ begin
   // execute default function:
   if ExecuteDefault then
   begin
-    if (bPartyGame) then
+    if (bPartyGame) and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+      // show the normal score screen with the single scores first; it
+      // continues with the highscores (if the round type is saved) and
+      // then with the party score screen
+      Display.FadeTo(@ScreenScore)
+    else if (bPartyGame) then
       // display party score screen
       Display.FadeTo(@ScreenPartyScore)
     else //display standard score screen
@@ -1040,6 +1062,60 @@ begin
 
   if (Length(Result) = 0) then
     Result := Language.Translate('PARTY_NOBODY');
+end;
+
+function TPartyGame.CurrentModeName: string;
+var
+  ModeIndex: integer;
+begin
+  Result := '';
+  if not bPartyGame or (CurRound < 0) or (CurRound > High(Rounds)) then
+    Exit;
+
+  ModeIndex := Rounds[CurRound].Mode;
+  if (ModeIndex >= 0) and (ModeIndex <= High(Modes)) then
+    Result := LowerCase(Modes[ModeIndex].Name);
+end;
+
+function TPartyGame.IsMedleyRound: boolean;
+begin
+  Result := (CurrentModeName = 'medley');
+end;
+
+function TPartyGame.RoundSavesHighscores: boolean;
+const
+  // party modes with a complete song and the normal scoring (lower case)
+  ALLOWED_MODES: array[0..4] of string = (
+    'duel',        // Duel
+    'blind',       // Blind (notes hidden)
+    'blindlyrics', // Blind (lyrics hidden)
+    'blindtotal',  // Blind (notes and lyrics hidden)
+    'deaf'         // music muted at times, normal scoring
+  );
+var
+  ModeName: string;
+  I: integer;
+begin
+  Result := false;
+  if not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+    Exit;
+
+  ModeName := CurrentModeName;
+  for I := Low(ALLOWED_MODES) to High(ALLOWED_MODES) do
+    if (ModeName = ALLOWED_MODES[I]) then
+    begin
+      Result := true;
+      Exit;
+    end;
+end;
+
+function TPartyGame.GetSingerName(Team: integer): UTF8String;
+begin
+  Result := '';
+  if (Team >= 0) and (Team <= High(Teams)) then
+    with Teams[Team] do
+      if (NextPlayer >= 0) and (NextPlayer <= High(Players)) then
+        Result := UTF8String(Trim(Players[NextPlayer].Name));
 end;
 
 procedure TPartyGame.SaveSungPartySong(ID: integer);

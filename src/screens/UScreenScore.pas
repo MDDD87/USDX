@@ -181,6 +181,9 @@ type
       procedure MapPlayersToPosition;
 
       procedure FillPlayerItems(PlayerNumber: integer);
+      function  IsPartyRound: boolean;
+      function  GetPlayerDisplayName(PlayerIndex: integer): UTF8String;
+      procedure LeaveScreen;
 
       procedure UpdateAnimation;
       {****
@@ -226,6 +229,7 @@ uses
   ULog,
   UMenuStatic,
   UNote,
+  UParty,
   UPathUtils,
   UScreenPopup,
   UScreenSong,
@@ -381,10 +385,7 @@ begin
         begin
           if (FinishScreenDraw = true) then
           begin
-            if (CurrentSong.isDuet and (Ini.DuetScores = 0)) or (ScreenSong.RapToFreestyle) or (ScreenSong.Mode = smMedley) then
-              FadeTo(@ScreenSong)
-            else
-              FadeTo(@ScreenHighScores);
+            LeaveScreen;
             Exit;
           end
           else
@@ -405,10 +406,7 @@ begin
            if (FinishScreenDraw = true) then
            begin
 
-             if (CurrentSong.isDuet and (Ini.DuetScores = 0)) or (ScreenSong.RapToFreestyle) or (ScreenSong.Mode = smMedley) then
-               FadeTo(@ScreenSong)
-             else
-               FadeTo(@ScreenHighScores);
+             LeaveScreen;
 
           	 Exit;
            end
@@ -424,7 +422,7 @@ begin
 
       SDLK_RIGHT:
         begin
-          if (ScreenSong.Mode = smMedley) then
+          if ScreenSong.MedleyActive then
           begin
             if (CurrentRound < Length(PlaylistMedley.Stats)-1) then
               inc(CurrentRound)
@@ -449,7 +447,7 @@ begin
 
       SDLK_LEFT:
         begin
-          if (ScreenSong.Mode = smMedley) then
+          if ScreenSong.MedleyActive then
           begin
             if (CurrentRound > 0) then
               dec(CurrentRound)
@@ -526,7 +524,7 @@ begin
       ' - ' + PlaylistMedley.Stats[CurrentRound].SongTitle;
   end else
   begin
-    if (ScreenSong.Mode = smMedley) then
+    if ScreenSong.MedleyActive then
     begin
       Text[TextArtist].Text      := Language.Translate('SING_TOTAL');
       Text[TextTitle].Visible    := false;
@@ -541,7 +539,7 @@ begin
     end;
   end;
 
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
   begin
 
     for P := 0 to PlayersPlay - 1 do
@@ -1155,7 +1153,7 @@ begin
 
   // intially show total score
   CurrentRound := Length(PlaylistMedley.Stats)-1;
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
   begin
     StartPreview;
     for P := 0 to PlayersPlay - 1 do
@@ -1399,7 +1397,7 @@ begin
 
   }
 
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
     BarTime := 0;
 
   // swap static textures to current screen ones
@@ -1435,6 +1433,60 @@ begin
   Result := true;
 end;
 
+{ true if the score screen is shown after a round of the classic or free
+  party mode (Feature 1b) }
+function TScreenScore.IsPartyRound: boolean;
+begin
+  Result := Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]);
+end;
+
+{ party mode: the person who sang, with the team name in brackets }
+function TScreenScore.GetPlayerDisplayName(PlayerIndex: integer): UTF8String;
+var
+  TeamName: UTF8String;
+begin
+  Result := Player[PlayerIndex].Name;
+  if IsPartyRound and (PlayerIndex <= High(Party.Teams)) then
+  begin
+    TeamName := UTF8String(Party.Teams[PlayerIndex].Name);
+    Result := Party.GetSingerName(PlayerIndex);
+    if (Result = '') then
+      Result := TeamName
+    else if (TeamName <> '') then
+      Result := Result + ' (' + TeamName + ')';
+  end;
+end;
+
+{ leaves the score screen.
+  Normal mode: highscores (or song selection).
+  Party mode: highscores only for round types whose scores were saved, then
+  always the party score screen, so the party goes on (Feature 1b). }
+procedure TScreenScore.LeaveScreen;
+var
+  P: integer;
+begin
+  if IsPartyRound then
+  begin
+    // medley: after browsing the single songs Player[] holds the result of
+    // one song; the party ranking needs the result of the whole medley
+    if ScreenSong.MedleyActive and (Length(PlaylistMedley.Stats) > 0) then
+      for P := 0 to PlayersPlay - 1 do
+        if (P <= High(PlaylistMedley.Stats[High(PlaylistMedley.Stats)].Player)) then
+          Player[P] := PlaylistMedley.Stats[High(PlaylistMedley.Stats)].Player[P];
+
+    // same conditions as for saving (TScreenSingController.Finish/SaveLocalScores)
+    if ScreenSing.SungToEnd and Party.RoundSavesHighscores and
+       not (CurrentSong.isDuet and (Ini.DuetScores = 0)) then
+      FadeTo(@ScreenHighScores)
+    else
+      FadeTo(@ScreenPartyScore);
+  end
+  else if (CurrentSong.isDuet and (Ini.DuetScores = 0)) or (ScreenSong.RapToFreestyle) or (ScreenSong.Mode = smMedley) then
+    FadeTo(@ScreenSong)
+  else
+    FadeTo(@ScreenHighScores);
+end;
+
 procedure TscreenScore.FillPlayerItems(PlayerNumber: integer);
 var
   ThemeIndex: integer;
@@ -1442,7 +1494,7 @@ begin
   ThemeIndex := PlayerPositionMap[PlayerNumber-1].Position;
   if (ThemeIndex > 0) and ((ScreenAct = PlayerPositionMap[PlayerNumber-1].Screen) or (PlayerPositionMap[PlayerNumber-1].BothScreens)) then
   begin
-    Text[TextName[ThemeIndex]].Text := Player[PlayerNumber-1].Name;
+    Text[TextName[ThemeIndex]].Text := GetPlayerDisplayName(PlayerNumber-1);
     // end todo
 
     //golden
@@ -1800,7 +1852,7 @@ begin
   if (Ini.PreviewVolume <> 0) then
   begin
     changed := false;
-    if (ScreenSong.Mode = smMedley) then
+    if ScreenSong.MedleyActive then
     begin
       if (CurrentRound < Length(PlaylistMedley.Stats) - 1) and (ScreenSong.SongIndex <> PlaylistMedley.Song[CurrentRound])  then
       begin
@@ -1858,7 +1910,7 @@ begin
 
   // not implement voice yet
   {
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
   begin
     if (CurrentRound<Length(PlaylistMedley.Stats)-1) and (Voice <> CurrentRound)  then
     begin
