@@ -237,6 +237,7 @@ uses
 
 const
   MAX_MESSAGE = 3;
+  PARTY_TEAMNAME_MAXLEN = 16; // max. characters of a team name on the sing screen
 
 //ToDo basisbit: check this again
 // Dirty HacK
@@ -545,7 +546,19 @@ begin
   begin
     if (Party.bPartyGame) then
     begin
-      ScreenSing.PlayerNames[I] := Ini.NameTeam[I-1];
+      // show the team names entered on the party player screen instead of
+      // the default names from config.ini ("Team1", "Team2", ...)
+      if (ScreenSong.Mode <> smPartyTournament) and (I-1 <= High(Party.Teams))
+        and (Party.Teams[I-1].Name <> '') then
+      begin
+        ScreenSing.PlayerNames[I] := UTF8String(Party.Teams[I-1].Name);
+        // the name fields have no fixed width, so cut very long team names
+        // to keep them from overlapping the score display
+        if (LengthUTF8(ScreenSing.PlayerNames[I]) > PARTY_TEAMNAME_MAXLEN) then
+          ScreenSing.PlayerNames[I] := UTF8Copy(ScreenSing.PlayerNames[I], 1, PARTY_TEAMNAME_MAXLEN - 1) + '...';
+      end
+      else
+        ScreenSing.PlayerNames[I] := Ini.NameTeam[I-1];
     end
     else
     begin
