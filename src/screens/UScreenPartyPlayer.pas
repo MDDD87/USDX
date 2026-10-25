@@ -45,6 +45,7 @@ uses
   UScreenPartyNewRound,
   UScreenPartyScore,
   UScreenPartyWin,
+  UScreenScore,
   UThemes,
   sdl2,
   SysUtils;
@@ -180,6 +181,7 @@ procedure TScreenPartyPlayer.UpdateParty;
 var
     I, J: integer;
     Col: TRGB;
+    SavedIniPlayers: integer;
 begin
 
   CacheCurrentSetup;
@@ -227,6 +229,18 @@ begin
   ScreenPartyNewRound := TScreenPartyNewRound.Create;
   ScreenPartyWin := TScreenPartyWin.Create;
   ScreenPartyScore := TScreenPartyScore.Create;
+
+  // Feature 1b: the normal score screen is shown after every party round.
+  // ScreenScore is only created on the player selection screen (UScreenName),
+  // so it may not exist yet (crash: "Object reference is Nil"). Create it here
+  // with the team colors and a layout for the number of teams. Ini.Players is
+  // only changed temporarily for loading the theme (0 = 1 player, 1 = 2, 2 = 3).
+  SavedIniPlayers := Ini.Players;
+  Ini.Players := PlayersPlay - 1;
+  Theme.ThemeScoreLoad;
+  FreeAndNil(ScreenScore);
+  ScreenScore := TScreenScore.Create;
+  Ini.Players := SavedIniPlayers;
 
   if (Party.ModesAvailable) then
   begin //mode for current playersetup available
