@@ -256,6 +256,15 @@ type
       otherwise the singer's name ('' if there is none) }
     function GetScoreName(Team: integer): UTF8String;
 
+    { party points team Team gets for the current round (same rules as
+      GenScores). Only valid after RoundPlayed (ranking is set). GenScores
+      adds these points when the next round starts, so the party score
+      screen shows Teams[].Score + RoundPoints as the new total. }
+    function RoundPoints(Team: integer): integer;
+
+    { "Round X of Y: <round type>" for the party screens }
+    function RoundCaption(Round: integer): UTF8String;
+
     destructor  Destroy; override;
   end;
 
@@ -276,6 +285,11 @@ const
     instead of a single person. Normal entries use 1 shl Track (1, 2, ...).
     The marker allows moving team entries to a separate team list later. }
   PARTY_TEAM_SCORE_TRACKMASK = 0;
+
+  { maximum length of team and player names entered on the party player
+    screen, and of names shown on the score screen (longer ones are cut) }
+  PARTY_NAME_MAXLEN         = 20;
+  PARTY_SCORE_NAME_MAXLEN   = 18;
 
   { party medley (SingStar style): number of songs, maximum length of each
     section in seconds (cut at the end of a lyrics line, so a section can be
@@ -299,6 +313,9 @@ const
 
   StandardModus = 0; //Modus Id that will be played in non-party mode
 
+{ shortens Name to MaxLen characters (UTF-8 aware), long names end with '...' }
+function ShortenName(const Name: UTF8String; MaxLen: integer): UTF8String;
+
 var
   Party: TPartyGame;
 
@@ -313,6 +330,7 @@ uses
   USong,
   USongs,
   UNote,
+  UUnicodeUtils,
   SysUtils;
 
 //-------------
@@ -1098,6 +1116,13 @@ begin
     Result := Language.Translate('PARTY_NOBODY');
 end;
 
+function ShortenName(const Name: UTF8String; MaxLen: integer): UTF8String;
+begin
+  Result := Name;
+  if (MaxLen > 3) and (LengthUTF8(Name) > MaxLen) then
+    Result := UTF8Copy(Name, 1, MaxLen - 3) + '...';
+end;
+
 function TPartyGame.CurrentModeName: string;
 var
   ModeIndex: integer;
@@ -1119,6 +1144,43 @@ end;
 function TPartyGame.IsAnyMedleyRound: boolean;
 begin
   Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley');
+end;
+
+function TPartyGame.RoundPoints(Team: integer): integer;
+var
+  I: integer;
+begin
+  Result := 0;
+  if (CurRound < 0) or (CurRound > High(Rounds)) then
+    Exit;
+
+  for I := 0 to High(Rounds[CurRound].Ranking) do
+    if (Rounds[CurRound].Ranking[I].Team = Team) then
+    begin
+      if (Length(Teams) = 2) then
+      begin
+        if (Rounds[CurRound].Ranking[I].Rank = PR_First) then
+          Result := 1;
+      end
+      else if (Length(Teams) = 3) then
+      begin
+        if (Rounds[CurRound].Ranking[I].Rank = PR_First) then
+          Result := 3
+        else if (Rounds[CurRound].Ranking[I].Rank = PR_Second) then
+          Result := 1;
+      end;
+      Exit;
+    end;
+end;
+
+function TPartyGame.RoundCaption(Round: integer): UTF8String;
+begin
+  Result := '';
+  if (Round < 0) or (Round > High(Rounds)) then
+    Exit;
+  Result := Format(Language.Translate('PARTY_ROUND_CAPTION'),
+    [Round + 1, Length(Rounds),
+     Language.Translate('MODE_' + UpperCase(Modes[Rounds[Round].Mode].Name) + '_NAME')]);
 end;
 
 function TPartyGame.MedleySongCount: integer;

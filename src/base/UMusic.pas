@@ -637,6 +637,13 @@ type
       Applause:TAudioPlaybackStream;
       BGMusic: TAudioPlaybackStream;
 
+      // score screen in SingStar style (optional files in the sounds folder;
+      // nil if the file does not exist, then nothing is played)
+      ScoreDrumRoll:  TAudioPlaybackStream; // 'score drumroll.mp3'
+      ScoreNotes:     TAudioPlaybackStream; // 'score notes.mp3'
+      ScoreLineBonus: TAudioPlaybackStream; // 'score linebonus.mp3'
+      ScoreGolden:    TAudioPlaybackStream; // 'score golden.mp3'
+
       constructor Create();
       destructor Destroy(); override;
 
@@ -644,6 +651,8 @@ type
       procedure UnloadSounds();
 
       procedure StartBgMusic();
+      { like StartBgMusic, but the music fades in within FadeTime seconds }
+      procedure StartBgMusicFaded(FadeTime: real);
       procedure PauseBgMusic();
       procedure ApplySfxVolume(Volume: single);
       // TODO
@@ -1126,6 +1135,16 @@ begin
   Click   := AudioPlayback.OpenSound(SoundPath.Append('rimshot022b.wav'));
   Applause:= AudioPlayback.OpenSound(SoundPath.Append('Applause.mp3'));
 
+  // optional sounds of the score screen (not part of the repository)
+  if SoundPath.Append('score drumroll.mp3').IsFile then
+    ScoreDrumRoll := AudioPlayback.OpenSound(SoundPath.Append('score drumroll.mp3'));
+  if SoundPath.Append('score notes.mp3').IsFile then
+    ScoreNotes := AudioPlayback.OpenSound(SoundPath.Append('score notes.mp3'));
+  if SoundPath.Append('score linebonus.mp3').IsFile then
+    ScoreLineBonus := AudioPlayback.OpenSound(SoundPath.Append('score linebonus.mp3'));
+  if SoundPath.Append('score golden.mp3').IsFile then
+    ScoreGolden := AudioPlayback.OpenSound(SoundPath.Append('score golden.mp3'));
+
   BGMusic := AudioPlayback.OpenSound(SoundPath.Append('background track.mp3'));
 
   if (BGMusic <> nil) then
@@ -1147,6 +1166,10 @@ begin
   FreeAndNil(Click);
   FreeAndNil(Applause);
   FreeAndNil(BGMusic);
+  FreeAndNil(ScoreDrumRoll);
+  FreeAndNil(ScoreNotes);
+  FreeAndNil(ScoreLineBonus);
+  FreeAndNil(ScoreGolden);
 end;
 
 procedure TSoundLibrary.ApplySfxVolume(Volume: single);
@@ -1170,6 +1193,14 @@ begin
     Click.Volume := Volume;
   if Applause <> nil then
     Applause.Volume := Volume;
+  if ScoreDrumRoll <> nil then
+    ScoreDrumRoll.Volume := Volume;
+  if ScoreNotes <> nil then
+    ScoreNotes.Volume := Volume;
+  if ScoreLineBonus <> nil then
+    ScoreLineBonus.Volume := Volume;
+  if ScoreGolden <> nil then
+    ScoreGolden.Volume := Volume;
 end;
 
 (* TODO
@@ -1189,6 +1220,16 @@ begin
   begin
     SoundLib.BGMusic.SetVolume(EnsureRange(Ini.BackgroundMusicVolume, 0, 100) / 100);
     AudioPlayback.PlaySound(Soundlib.BGMusic);
+  end;
+end;
+
+procedure TSoundLibrary.StartBgMusicFaded(FadeTime: real);
+begin
+  if (TBackgroundMusicOption(Ini.BackgroundMusicOption) = bmoOn) and
+    (Soundlib.BGMusic <> nil) and not (Soundlib.BGMusic.Status = ssPlaying) then
+  begin
+    SoundLib.BGMusic.SetVolume(0);
+    SoundLib.BGMusic.FadeIn(FadeTime, EnsureRange(Ini.BackgroundMusicVolume, 0, 100) / 100);
   end;
 end;
 

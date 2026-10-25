@@ -63,6 +63,11 @@ type
       StaticTeam3Deco:   cardinal;
       TextWinner:        cardinal;
 
+      // "+1" etc. right of each team: party points of this round
+      TextRoundPoints:   array[0..2] of cardinal;
+      // index of the subtitle text ("Points of the last round"), -1 if not found
+      SubtitleText:      integer;
+
       DecoTex:          array[0..UIni.IMaxPlayerCount-1] of TTexture;
       DecoColor:        array[0..UIni.IMaxPlayerCount-1] of Record
                                         R, G, B: real;
@@ -137,6 +142,7 @@ constructor TScreenPartyScore.Create;
 var
   R, G, B: real;
   Color: integer;
+  I: integer;
 begin
   inherited Create;
 
@@ -194,6 +200,26 @@ begin
   end;
 
   LoadFromTheme(Theme.PartyScore);
+
+  // round points ("+1") right of the deco medal of each team
+  TextRoundPoints[0] := AddText(Theme.PartyScore.TextScoreTeam1.X + 72, Theme.PartyScore.TextScoreTeam1.Y, 0, 0,
+    Theme.PartyScore.TextScoreTeam1.Font, Theme.PartyScore.TextScoreTeam1.Style, Theme.PartyScore.TextScoreTeam1.Size,
+    1, 0.85, 0.3, 0, '', false, 0, 0, false);
+  TextRoundPoints[1] := AddText(Theme.PartyScore.TextScoreTeam2.X + 72, Theme.PartyScore.TextScoreTeam2.Y, 0, 0,
+    Theme.PartyScore.TextScoreTeam2.Font, Theme.PartyScore.TextScoreTeam2.Style, Theme.PartyScore.TextScoreTeam2.Size,
+    1, 0.85, 0.3, 0, '', false, 0, 0, false);
+  TextRoundPoints[2] := AddText(Theme.PartyScore.TextScoreTeam3.X + 72, Theme.PartyScore.TextScoreTeam3.Y, 0, 0,
+    Theme.PartyScore.TextScoreTeam3.Font, Theme.PartyScore.TextScoreTeam3.Style, Theme.PartyScore.TextScoreTeam3.Size,
+    1, 0.85, 0.3, 0, '', false, 0, 0, false);
+
+  // the subtitle from the theme is replaced by "Round X of Y: <round type>"
+  SubtitleText := -1;
+  for I := 0 to High(Text) do
+    if (Text[I].Text = Language.Translate('PARTY_SCORE_DESC')) then
+    begin
+      SubtitleText := I;
+      Break;
+    end;
 end;
 
 destructor TScreenPartyScore.Destroy();
@@ -207,6 +233,7 @@ end;
 procedure TScreenPartyScore.OnShow;
 var
   Ranking: AParty_TeamRanking;
+  I: integer;
 begin
   inherited;
 
@@ -223,12 +250,31 @@ begin
   // get rankings for current round
   Ranking := Party.Rounds[Party.CurrentRound].Ranking;
 
+  // "Round X of Y: <round type>" instead of "Points of the last round."
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Party.RoundCaption(Party.CurrentRound);
+
+  // the points of this round are added by Party.NextRound (GenScores) after
+  // this screen; show the new total and the points of this round now
+  for I := 0 to 2 do
+  begin
+    Text[TextRoundPoints[I]].Visible := (I <= High(Party.Teams));
+    if (I <= High(Party.Teams)) then
+    begin
+      Text[TextRoundPoints[I]].Text := '+' + IntToStr(Party.RoundPoints(I));
+      if (Party.RoundPoints(I) > 0) then
+        Text[TextRoundPoints[I]].Alpha := 1
+      else
+        Text[TextRoundPoints[I]].Alpha := 0.5;
+    end;
+  end;
+
   //Set Winnertext
   Text[TextWinner].Text := Format(Language.Translate('PARTY_SCORE_WINS'), [Party.GetWinnerString(Party.CurrentRound)]);
 
   if (Length(Party.Teams) >= 1) then
   begin
-    Text[TextScoreTeam1].Text := InttoStr(Party.Teams[0].Score);
+    Text[TextScoreTeam1].Text := InttoStr(Party.Teams[0].Score + Party.RoundPoints(0));
     Text[TextNameTeam1].Text := Utf8String(Party.Teams[0].Name);
 
     //Set Deco Texture
@@ -265,7 +311,7 @@ begin
 
   if (Length(Party.Teams) >= 2) then
   begin
-    Text[TextScoreTeam2].Text := InttoStr(Party.Teams[1].Score);
+    Text[TextScoreTeam2].Text := InttoStr(Party.Teams[1].Score + Party.RoundPoints(1));
     Text[TextNameTeam2].Text := UTF8String(Party.Teams[1].Name);
 
     //Set Deco Texture
@@ -303,7 +349,7 @@ begin
 
   if (Length(Party.Teams) >= 3) then
   begin
-    Text[TextScoreTeam3].Text := InttoStr(Party.Teams[2].Score);
+    Text[TextScoreTeam3].Text := InttoStr(Party.Teams[2].Score + Party.RoundPoints(2));
     Text[TextNameTeam3].Text := UTF8String(Party.Teams[2].Name);
 
     //Set Deco Texture

@@ -193,10 +193,11 @@ begin
     Ini.SingColor[I] := Num[I];
     Ini.TeamColor[I] := Num[I];
     
-    Party.AddTeam(Button[I * 5].Text[0].Text);
+    // names from config.ini or name templates may be longer than the input limit
+    Party.AddTeam(UTF8Copy(Button[I * 5].Text[0].Text, 1, PARTY_NAME_MAXLEN));
 
     for J := 0 to CountPlayer[I] do
-      Party.AddPlayer(I, Button[I * 5 + 1 + J].Text[0].Text);
+      Party.AddPlayer(I, UTF8Copy(Button[I * 5 + 1 + J].Text[0].Text, 1, PARTY_NAME_MAXLEN));
 
     // no avatar on Party
     AvatarPlayerTextures[I + 1] := NoAvatarTexture[I + 1];
@@ -323,8 +324,10 @@ begin
     // check normal keys
     if (IsPrintableChar(CharCode)) then
     begin
-      Button[Interactions[Interaction].Num].Text[0].Text := Button[Interactions[Interaction].Num].Text[0].Text +
-                                          UCS4ToUTF8String(CharCode);
+      // team and player names are limited to PARTY_NAME_MAXLEN characters
+      if (LengthUTF8(Button[Interactions[Interaction].Num].Text[0].Text) < PARTY_NAME_MAXLEN) then
+        Button[Interactions[Interaction].Num].Text[0].Text := Button[Interactions[Interaction].Num].Text[0].Text +
+                                            UCS4ToUTF8String(CharCode);
       Exit;
     end;
 
