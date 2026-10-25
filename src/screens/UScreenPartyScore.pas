@@ -72,7 +72,6 @@ type
       // switch to the new total including this round (with a "ding")
       ShowTime:          cardinal;
       PointsCounted:     boolean;
-      procedure ShowNewTotals;
 
       DecoTex:          array[0..UIni.IMaxPlayerCount-1] of TTexture;
       DecoColor:        array[0..UIni.IMaxPlayerCount-1] of Record
@@ -80,7 +79,8 @@ type
                         end;
 
       MaxScore:          word;
-      
+
+      procedure ShowNewTotals;
       constructor Create; override;
       destructor Destroy; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
