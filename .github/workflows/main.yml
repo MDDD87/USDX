@@ -14,6 +14,7 @@ jobs:
   build_windows:
     name: Build for Windows
     runs-on: windows-2022
+    timeout-minutes: 120
     env:
       FPC_VERSION: 3.2.2
     steps:
@@ -40,9 +41,22 @@ jobs:
             mingw-w64-ucrt-x86_64-nasm
             patch
             unzip
+      # the Free Pascal installation is cached, so it is only downloaded from
+      # SourceForge once (a slow or broken download made a build hang for hours)
+      - name: Cache Free Pascal
+        id: cache-fpc
+        uses: actions/cache@v6
+        with:
+          path: C:\FPC
+          key: fpc-${{ env.FPC_VERSION }}-win32-win64
       - name: Install Dependencies
+        if: steps.cache-fpc.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         run: |
-          curl.exe -L --max-time 60 -o fpc-installer.exe "https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.win32.and.win64.exe/download"
+          curl.exe -L --fail --retry 5 --retry-delay 10 --max-time 900 -o fpc-installer.exe "https://sourceforge.net/projects/freepascal/files/Win32/3.2.2/fpc-3.2.2.win32.and.win64.exe/download"
+          $size = (Get-Item fpc-installer.exe).Length
+          Write-Host "fpc-installer.exe: $size bytes"
+          if ($size -lt 20000000) { throw "FPC download incomplete ($size bytes)" }
           Start-Process -FilePath ".\\fpc-installer.exe" -ArgumentList "/TYPE=full /VERYSILENT /SP- /SUPPRESSMSGBOXES /NORESTART" -Wait
       - name: Cache DLLs
         id: cache-dlls
