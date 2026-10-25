@@ -53,7 +53,19 @@ const
 
   EaseOut_MaxSteps: real = 10;    // that's the speed of the bars (10 is fast | 100 is slower)
 
-  BarRaiseSpeed:    cardinal = 14; // Time for raising the bar one step higher (in ms)
+  // Time for raising the bar one step higher (in ms). Each of the three parts
+  // (notes, line bonus, golden notes) has 100 steps, so 17 ms gives about
+  // 5 seconds for the whole bar, matching the drum roll (SingStar style)
+  BarRaiseSpeed:    cardinal = 17;
+
+  // SingStar style sounds: applause after the bar is complete, then the
+  // background music fades in (times in ms after the bar is complete)
+  ScoreApplauseDelay: cardinal = 300;
+  ScoreBgMusicDelay:  cardinal = 2000;
+  ScoreBgMusicFade:   real     = 3.0;   // seconds
+  // if the bar is completed earlier than this after the drum roll started
+  // (key pressed), the drum roll is stopped instead of ringing out
+  ScoreDrumRollMinTime: cardinal = 4500;
 
 type
   TScoreBarType = (sbtScore, sbtLine, sbtGolden);
@@ -170,6 +182,15 @@ type
       ButtonSend: array[1..UIni.IMaxPlayerCount] of integer;
       CurrentRound:          integer;
       StaticNavigate:       integer;
+
+      // SingStar style sounds: 0 = not started, 1 = drum roll (notes),
+      // 2 = line bonus, 3 = golden notes, 4 = bar complete
+      ScoreSoundStage:      integer;
+      DrumRollStartTime:    cardinal;
+      BarCompleteTime:      cardinal;
+      ApplausePlayed:       boolean;
+      BgMusicStarted:       boolean;
+      MedleyBrowsed:        boolean; // medley: user browses the single songs
       TextNavigate:         integer;
 
       procedure RefreshTexts;
@@ -186,6 +207,10 @@ type
       procedure LeaveScreen;
 
       procedure UpdateAnimation;
+
+      // SingStar style sounds (drum roll, accents, applause, background music)
+      procedure UpdateScoreSounds;
+      procedure FinishScoreSounds;
       {****
        * helpers for bar easing
        *}
@@ -212,6 +237,7 @@ type
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       function ParseMouse(MouseButton: Integer; BtnDown: Boolean; X, Y: integer): boolean; override;
       procedure OnShow; override;
+      procedure OnHide; override;
       procedure OnShowFinish; override;
       function Draw: boolean; override;
   end;
@@ -430,11 +456,11 @@ begin
               CurrentRound := 0;
 
             AudioPlayback.PlaySound(SoundLib.Change);
+            MedleyBrowsed := true;
             RefreshTexts;
 
-            if not (Ini.SavePlayback=1) then
-              StartPreview
-            else
+            // SingStar style: no song preview on the score screen
+            if (Ini.SavePlayback=1) then
               StartVoice;
 
           end
@@ -455,11 +481,11 @@ begin
               CurrentRound := Length(PlaylistMedley.Stats)-1;
 
             AudioPlayback.PlaySound(SoundLib.Change);
+            MedleyBrowsed := true;
             RefreshTexts;
 
-            if not (Ini.SavePlayback=1) then
-              StartPreview
-            else
+            // SingStar style: no song preview on the score screen
+            if (Ini.SavePlayback=1) then
               StartVoice;
 
           end
@@ -1072,6 +1098,96 @@ begin
 
 end;
 
+{ SingStar style sounds on the score screen:
+  drum roll while the bars rise, a short accent when each part of the bar
+  (notes, line bonus, golden notes) is complete, applause when the whole bar
+  is complete, then the background music fades in. Missing sound files are
+  simply not played. }
+procedure TScreenScore.UpdateScoreSounds;
+var
+  NewStage: integer;
+  Now_: cardinal;
+begin
+  if not ShowFinish then
+    Exit;
+
+  Now_ := SDL_GetTicks();
+
+  if (ScoreSoundStage < 4) then
+  begin
+    // the animation has started: drum roll
+    if (ScoreSoundStage = 0) then
+    begin
+      ScoreSoundStage := 1;
+      DrumRollStartTime := Now_;
+      AudioPlayback.PlaySound(SoundLib.ScoreDrumRoll);
+    end;
+
+    // which part of the bar is rising now?
+    if (BarScore_EaseOut_Step < EaseOut_MaxSteps * 10) then
+      NewStage := 1
+    else if (BarPhrase_EaseOut_Step < EaseOut_MaxSteps * 10) then
+      NewStage := 2
+    else if (BarGolden_EaseOut_Step < EaseOut_MaxSteps * 10) then
+      NewStage := 3
+    else
+      NewStage := 4;
+
+    if (NewStage > ScoreSoundStage) then
+    begin
+      // accents only if the parts were completed one after the other (not
+      // when the animation was skipped with a key press)
+      if (NewStage = ScoreSoundStage + 1) then
+        case NewStage of
+          2: AudioPlayback.PlaySound(SoundLib.ScoreNotes);
+          3: AudioPlayback.PlaySound(SoundLib.ScoreLineBonus);
+          4: AudioPlayback.PlaySound(SoundLib.ScoreGolden);
+        end;
+
+      ScoreSoundStage := NewStage;
+      if (ScoreSoundStage = 4) then
+      begin
+        BarCompleteTime := Now_;
+        // skipped: stop the drum roll, otherwise let its final hit ring out
+        if (Now_ - DrumRollStartTime < ScoreDrumRollMinTime) then
+          AudioPlayback.StopSound(SoundLib.ScoreDrumRoll);
+      end;
+    end;
+  end
+  else
+  begin
+    if not ApplausePlayed and (Now_ - BarCompleteTime >= ScoreApplauseDelay) then
+    begin
+      ApplausePlayed := true;
+      AudioPlayback.PlaySound(SoundLib.Applause);
+    end;
+
+    if not BgMusicStarted and (Now_ - BarCompleteTime >= ScoreBgMusicDelay) then
+    begin
+      BgMusicStarted := true;
+      SoundLib.StartBgMusicFaded(ScoreBgMusicFade);
+    end;
+  end;
+end;
+
+{ leaving the score screen early: stop the drum roll and start the background
+  music, so the following screens are not silent }
+procedure TScreenScore.FinishScoreSounds;
+begin
+  AudioPlayback.StopSound(SoundLib.ScoreDrumRoll);
+  if not BgMusicStarted then
+  begin
+    BgMusicStarted := true;
+    SoundLib.StartBgMusicFaded(1.0);
+  end;
+end;
+
+procedure TScreenScore.OnHide;
+begin
+  inherited;
+  FinishScoreSounds;
+end;
+
 procedure TScreenScore.UpdateAnimation;
 var
   CurrentTime: integer;
@@ -1144,6 +1260,11 @@ begin
   FinishScreenDraw := false;
   PreviewEnd := 0;
 
+  ScoreSoundStage := 0;
+  ApplausePlayed := false;
+  BgMusicStarted := false;
+  MedleyBrowsed := false;
+
   {**
    * Turn backgroundmusic on
    *}
@@ -1155,7 +1276,7 @@ begin
   CurrentRound := Length(PlaylistMedley.Stats)-1;
   if ScreenSong.MedleyActive then
   begin
-    StartPreview;
+    // SingStar style: no song preview on the score screen
     for P := 0 to PlayersPlay - 1 do
       Player[P] := PlaylistMedley.Stats[CurrentRound].Player[P];
 
@@ -1286,9 +1407,9 @@ begin
 
   RefreshTexts;
 
-  if not (Ini.SavePlayback = 1) then
-    StartPreview
-  else
+  // SingStar style: the sung song is not played again on the score screen;
+  // instead a drum roll is played while the bars rise (UpdateScoreSounds)
+  if (Ini.SavePlayback = 1) then
   begin
     Voice := -1;
     StartVoice;
@@ -1397,7 +1518,8 @@ begin
 
   }
 
-  if ScreenSong.MedleyActive then
+  // medley: when browsing the single songs, the bars are shown at once
+  if ScreenSong.MedleyActive and MedleyBrowsed then
     BarTime := 0;
 
   // swap static textures to current screen ones
@@ -1408,6 +1530,9 @@ begin
 
   // Let's start to arise the bars
   UpdateAnimation;
+
+  // drum roll, accents, applause and background music
+  UpdateScoreSounds;
 
   if (ShowFinish) then
     DrawPlayerBars;
@@ -1440,26 +1565,17 @@ begin
   Result := Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]);
 end;
 
-{ party mode: the person who sang, with the team name in brackets }
+{ party mode: the person who sang (the team is shown by its color);
+  in Pass the Mic rounds the team name. Long names are shortened. }
 function TScreenScore.GetPlayerDisplayName(PlayerIndex: integer): UTF8String;
-var
-  TeamName: UTF8String;
 begin
   Result := Player[PlayerIndex].Name;
   if IsPartyRound and (PlayerIndex <= High(Party.Teams)) then
   begin
-    TeamName := UTF8String(Party.Teams[PlayerIndex].Name);
-    // Pass the Mic: several team members sang, show only the team name
-    if Party.IsTeamScoreRound then
-    begin
-      Result := TeamName;
-      Exit;
-    end;
-    Result := Party.GetSingerName(PlayerIndex);
+    Result := Party.GetScoreName(PlayerIndex);
     if (Result = '') then
-      Result := TeamName
-    else if (TeamName <> '') then
-      Result := Result + ' (' + TeamName + ')';
+      Result := UTF8String(Party.Teams[PlayerIndex].Name);
+    Result := ShortenName(Result, PARTY_SCORE_NAME_MAXLEN);
   end;
 end;
 
@@ -1480,8 +1596,9 @@ begin
         if (P <= High(PlaylistMedley.Stats[High(PlaylistMedley.Stats)].Player)) then
           Player[P] := PlaylistMedley.Stats[High(PlaylistMedley.Stats)].Player[P];
 
-    // same conditions as for saving (TScreenSingController.Finish/SaveLocalScores)
-    if ScreenSing.SungToEnd and Party.RoundSavesHighscores and
+    // same conditions as for saving (TScreenSingController.Finish/SaveLocalScores);
+    // in party mode also songs that were stopped early are saved
+    if Party.RoundSavesHighscores and
        not (CurrentSong.isDuet and (Ini.DuetScores = 0)) then
       FadeTo(@ScreenHighScores)
     else

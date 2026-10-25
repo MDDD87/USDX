@@ -55,6 +55,10 @@ type
 
       TextNextRound: cardinal;
       TextNextRoundNo: cardinal;
+      // "Singing:" label left of the next singers
+      TextSingers: cardinal;
+      // index of the subtitle text ("Next players to the mics!"), -1 if not found
+      SubtitleText: integer;
       TextNextPlayer1: cardinal;
       TextNextPlayer2: cardinal;
       TextNextPlayer3: cardinal;
@@ -205,6 +209,8 @@ begin
 end;
 
 constructor TScreenPartyNewRound.Create;
+var
+  I: integer;
 begin
   inherited Create;
 
@@ -259,6 +265,21 @@ begin
   StaticNextPlayer3 := AddStatic (Theme.PartyNewRound.StaticNextPlayer3);
 
   LoadFromTheme(Theme.PartyNewRound);
+
+  // label left of the boxes with the next singers
+  TextSingers := AddText(Theme.PartyNewRound.StaticNextPlayer1.X - 10,
+    Theme.PartyNewRound.StaticNextPlayer1.Y + 12, 0, 0,
+    Theme.PartyNewRound.TextNextRound.Font, Theme.PartyNewRound.TextNextRound.Style, 22,
+    1, 1, 1, 2, Language.Translate('PARTY_ROUND_SINGERS'), false, 0, 0, false);
+
+  // the subtitle from the theme is replaced by "Round X of Y: <round type>"
+  SubtitleText := -1;
+  for I := 0 to High(Text) do
+    if (Text[I].Text = Language.Translate('PARTY_ROUND_DESC')) then
+    begin
+      SubtitleText := I;
+      Break;
+    end;
 end;
 
 procedure TScreenPartyNewRound.OnShow;
@@ -360,6 +381,11 @@ begin
 
   //nextRound Texts
   Text[TextNextRound].Text := Language.Translate('MODE_' + uppercase(Party.Modes[Party.Rounds[Party.CurrentRound].Mode].Name) + '_DESC');
+
+  // "Round X of Y: <round type>" instead of "Next players to the mics!",
+  // so it is clear which round type comes next
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Party.RoundCaption(Party.CurrentRound);
 
   Text[TextNextRoundNo].Text := InttoStr(Party.CurrentRound + 1);
   if (Length(Party.Teams) >= 1) then

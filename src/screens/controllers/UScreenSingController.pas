@@ -1669,13 +1669,15 @@ begin
   AudioPlayback.Stop;
   AudioPlayback.SetSyncSource(nil);
 
-  // party mode: completed rounds of comparable round types are also
-  // saved to the normal local highscores (see PartyRoundSavesHighscores)
-  if (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and SungToEnd
-    and PartyRoundSavesHighscores then
+  // party mode: rounds of comparable round types are also saved to the
+  // normal local highscores (see PartyRoundSavesHighscores). Like SingStar,
+  // this includes songs that were stopped early (decision 25.10.2026).
+  // (not FadeOut: Finish may be called more than once, never save twice)
+  if (ScreenSong.Mode in [smPartyClassic, smPartyFree])
+    and not FadeOut and PartyRoundSavesHighscores then
     SaveLocalScores;
 
-  if (ScreenSong.Mode = smNormal) and SungToEnd then
+  if (ScreenSong.Mode = smNormal) and SungToEnd and not FadeOut then
   begin
     SaveLocalScores;
 
@@ -1978,7 +1980,10 @@ var
 begin
   Sung := false;
 
-  if ScreenSing.SungToEnd and (not CurrentSong.isDuet or (Ini.DuetScores = 1)) then
+  // normal mode: only songs sung to the end; party mode: also songs that
+  // were stopped early (same condition as in TScreenScore.LeaveScreen)
+  if (ScreenSing.SungToEnd or PartyRoundSavesHighscores) and
+     (not CurrentSong.isDuet or (Ini.DuetScores = 1)) then
   begin
     for I := 0 to PlayersPlay - 1 do
     begin
