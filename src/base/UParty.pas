@@ -135,6 +135,11 @@ type
 
     SungPartySongs: array of integer;
 
+    // best single performance of the party (party winner screen)
+    BestScore: integer;
+    BestName:  UTF8String;
+    BestSong:  UTF8String;
+
     property CurrentRound: Integer read CurRound;
 
     constructor Create;
@@ -265,6 +270,12 @@ type
     { "Round X of Y: <round type>" for the party screens }
     function RoundCaption(Round: integer): UTF8String;
 
+    { number of rounds team Team has won (first place, draws included) }
+    function RoundsWon(Team: integer): integer;
+
+    { remembers the best single performance of the party }
+    procedure RecordPerformance(const Name, Song: UTF8String; Score: integer);
+
     destructor  Destroy; override;
   end;
 
@@ -360,6 +371,10 @@ begin
 
   SetLength(Teams, 0); //remove team info
   SetLength(Rounds, 0); //remove round info
+
+  BestScore := 0;
+  BestName := '';
+  BestSong := '';
 
   // clear times played
   for I := 0 to High(TimesPlayed) do
@@ -1181,6 +1196,28 @@ begin
   Result := Format(Language.Translate('PARTY_ROUND_CAPTION'),
     [Round + 1, Length(Rounds),
      Language.Translate('MODE_' + UpperCase(Modes[Rounds[Round].Mode].Name) + '_NAME')]);
+end;
+
+function TPartyGame.RoundsWon(Team: integer): integer;
+var
+  R, I: integer;
+begin
+  Result := 0;
+  for R := 0 to High(Rounds) do
+    if Rounds[R].AlreadyPlayed then
+      for I := 0 to High(Rounds[R].Ranking) do
+        if (Rounds[R].Ranking[I].Team = Team) and (Rounds[R].Ranking[I].Rank = PR_First) then
+          Inc(Result);
+end;
+
+procedure TPartyGame.RecordPerformance(const Name, Song: UTF8String; Score: integer);
+begin
+  if (Name <> '') and (Score > BestScore) then
+  begin
+    BestScore := Score;
+    BestName := Name;
+    BestSong := Song;
+  end;
 end;
 
 function TPartyGame.MedleySongCount: integer;

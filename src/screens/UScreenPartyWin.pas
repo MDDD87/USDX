@@ -61,9 +61,20 @@ type
       StaticTeam3Deco:   cardinal;
       TextWinner:        cardinal;
 
+      // "x of y rounds won" below each team and the best performance
+      TextRoundsTeam:    array[0..2] of cardinal;
+      TextBest:          cardinal;
+      // index of the subtitle text, -1 if not found
+      SubtitleText:      integer;
+
+      // fanfare, then applause
+      ShowTime:          cardinal;
+      ApplausePlayed:    boolean;
+
       constructor Create; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
+      function Draw: boolean; override;
   end;
 
 const
@@ -112,6 +123,8 @@ begin
 end;
 
 constructor TScreenPartyWin.Create;
+var
+  I: integer;
 begin
   inherited Create;
 
@@ -135,12 +148,46 @@ begin
   TextWinner := AddText (Theme.PartyWin.TextWinner);
 
   LoadFromTheme(Theme.PartyWin);
+
+  // "x of y rounds won" below the bar of each team (left aligned with the name)
+  TextRoundsTeam[0] := AddText(Theme.PartyWin.TextNameTeam1.X, Theme.PartyWin.StaticTeam1BG.Y + Theme.PartyWin.StaticTeam1BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam1.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundsTeam[1] := AddText(Theme.PartyWin.TextNameTeam2.X, Theme.PartyWin.StaticTeam2BG.Y + Theme.PartyWin.StaticTeam2BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam2.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundsTeam[2] := AddText(Theme.PartyWin.TextNameTeam3.X, Theme.PartyWin.StaticTeam3BG.Y + Theme.PartyWin.StaticTeam3BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam3.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+
+  // best performance of the party, below the teams
+  TextBest := AddText(400, 485, 0, 0, Theme.PartyWin.TextNameTeam1.Font, 0, 22, 1, 0.85, 0.3, 1, '', false, 0, 0, false);
+
+  // the subtitle from the theme is replaced by "Final score after X rounds"
+  SubtitleText := -1;
+  for I := 0 to High(Text) do
+    if (Text[I].Text = Language.Translate('PARTY_WIN_DESC')) then
+    begin
+      SubtitleText := I;
+      Break;
+    end;
+end;
+
+const
+  PARTY_WIN_APPLAUSE_DELAY = 1300; // ms: applause after the fanfare
+
+function TScreenPartyWin.Draw: boolean;
+begin
+  if not ApplausePlayed and (SDL_GetTicks() - ShowTime >= PARTY_WIN_APPLAUSE_DELAY) then
+  begin
+    ApplausePlayed := true;
+    AudioPlayback.PlaySound(SoundLib.Applause);
+  end;
+  Result := inherited Draw;
 end;
 
 procedure TScreenPartyWin.OnShow;
 var
  I: integer;
  Ranking: AParty_TeamRanking;
+ WinnerCount: integer;
 
   Function GetTeamColor(Team: integer): cardinal;
   var
@@ -161,8 +208,44 @@ begin
   // Ranking is sorted by score
   Ranking := Party.GetTeamRanking;
 
-  //Set Winnertext
-  Text[TextWinner].Text := Format(Language.Translate('PARTY_SCORE_WINS'), [Party.GetWinnerString(-1)]);
+  //Set Winnertext: "<team> wins the party!" or "Draw: <teams>"
+  WinnerCount := 0;
+  for I := 0 to High(Ranking) do
+    if (Ranking[I].Rank = PR_First) then
+      Inc(WinnerCount);
+  if (WinnerCount > 1) then
+    Text[TextWinner].Text := Format(Language.Translate('PARTY_WIN_DRAW'), [Party.GetWinnerString(-1)])
+  else
+    Text[TextWinner].Text := Format(Language.Translate('PARTY_WIN_WINNER'), [Party.GetWinnerString(-1)]);
+
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Format(Language.Translate('PARTY_WIN_FINAL'), [Length(Party.Rounds)]);
+
+  // rounds won by each team (in the order of the ranking, like the bars)
+  for I := 0 to 2 do
+  begin
+    Text[TextRoundsTeam[I]].Visible := (I <= High(Ranking));
+    if (I <= High(Ranking)) then
+      Text[TextRoundsTeam[I]].Text := Format(Language.Translate('PARTY_WIN_ROUNDS'),
+        [Party.RoundsWon(Ranking[I].Team), Length(Party.Rounds)]);
+  end;
+
+  // best single performance of the party
+  Text[TextBest].Visible := (Party.BestScore > 0);
+  if (Party.BestScore > 0) then
+    Text[TextBest].Text := Format(Language.Translate('PARTY_WIN_BEST'),
+      [Party.BestName, Party.BestScore, Party.BestSong]);
+
+  // fanfare first, then applause (Draw)
+  ShowTime := SDL_GetTicks();
+  ApplausePlayed := false;
+  if (SoundLib.PartyFanfare <> nil) then
+    AudioPlayback.PlaySound(SoundLib.PartyFanfare)
+  else
+  begin
+    ApplausePlayed := true;
+    AudioPlayback.PlaySound(SoundLib.Applause);
+  end;
   if (Length(Party.Teams) >= 1) then
   begin
     Text[TextScoreTeam1].Text := IntToStr(Party.Teams[Ranking[0].Team].Score);

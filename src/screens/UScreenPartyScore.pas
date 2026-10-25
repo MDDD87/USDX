@@ -68,6 +68,12 @@ type
       // index of the subtitle text ("Points of the last round"), -1 if not found
       SubtitleText:      integer;
 
+      // the team scores first show the old total; after a short time they
+      // switch to the new total including this round (with a "ding")
+      ShowTime:          cardinal;
+      PointsCounted:     boolean;
+      procedure ShowNewTotals;
+
       DecoTex:          array[0..UIni.IMaxPlayerCount-1] of TTexture;
       DecoColor:        array[0..UIni.IMaxPlayerCount-1] of Record
                                         R, G, B: real;
@@ -79,6 +85,7 @@ type
       destructor Destroy; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
+      function Draw: boolean; override;
   end;
 
 const
@@ -230,6 +237,44 @@ begin
   inherited;
 end;
 
+const
+  PARTY_SCORE_COUNT_DELAY = 1500; // ms after the screen appears
+
+{ the points of this round are added by Party.NextRound (GenScores) after this
+  screen. First the old total and "+1" are shown, then the new total. }
+procedure TScreenPartyScore.ShowNewTotals;
+var
+  Points: integer;
+begin
+  PointsCounted := true;
+  Points := 0;
+  if (Length(Party.Teams) >= 1) then
+  begin
+    Text[TextScoreTeam1].Text := IntToStr(Party.Teams[0].Score + Party.RoundPoints(0));
+    Inc(Points, Party.RoundPoints(0));
+  end;
+  if (Length(Party.Teams) >= 2) then
+  begin
+    Text[TextScoreTeam2].Text := IntToStr(Party.Teams[1].Score + Party.RoundPoints(1));
+    Inc(Points, Party.RoundPoints(1));
+  end;
+  if (Length(Party.Teams) >= 3) then
+  begin
+    Text[TextScoreTeam3].Text := IntToStr(Party.Teams[2].Score + Party.RoundPoints(2));
+    Inc(Points, Party.RoundPoints(2));
+  end;
+
+  if (Points > 0) then
+    AudioPlayback.PlaySound(SoundLib.ScoreNotes);
+end;
+
+function TScreenPartyScore.Draw: boolean;
+begin
+  if not PointsCounted and (SDL_GetTicks() - ShowTime >= PARTY_SCORE_COUNT_DELAY) then
+    ShowNewTotals;
+  Result := inherited Draw;
+end;
+
 procedure TScreenPartyScore.OnShow;
 var
   Ranking: AParty_TeamRanking;
@@ -274,7 +319,7 @@ begin
 
   if (Length(Party.Teams) >= 1) then
   begin
-    Text[TextScoreTeam1].Text := InttoStr(Party.Teams[0].Score + Party.RoundPoints(0));
+    Text[TextScoreTeam1].Text := InttoStr(Party.Teams[0].Score); // new total follows in ShowNewTotals
     Text[TextNameTeam1].Text := Utf8String(Party.Teams[0].Name);
 
     //Set Deco Texture
@@ -311,7 +356,7 @@ begin
 
   if (Length(Party.Teams) >= 2) then
   begin
-    Text[TextScoreTeam2].Text := InttoStr(Party.Teams[1].Score + Party.RoundPoints(1));
+    Text[TextScoreTeam2].Text := InttoStr(Party.Teams[1].Score); // new total follows in ShowNewTotals
     Text[TextNameTeam2].Text := UTF8String(Party.Teams[1].Name);
 
     //Set Deco Texture
@@ -349,7 +394,7 @@ begin
 
   if (Length(Party.Teams) >= 3) then
   begin
-    Text[TextScoreTeam3].Text := InttoStr(Party.Teams[2].Score + Party.RoundPoints(2));
+    Text[TextScoreTeam3].Text := InttoStr(Party.Teams[2].Score); // new total follows in ShowNewTotals
     Text[TextNameTeam3].Text := UTF8String(Party.Teams[2].Name);
 
     //Set Deco Texture
@@ -383,6 +428,9 @@ begin
     Statics[StaticTeam3BG].Visible := false;
     Statics[StaticTeam3Deco].Visible := false;
   end;
+
+  ShowTime := SDL_GetTicks();
+  PointsCounted := false;
 
   // the score and highscore screens play the sung song (Feature 1b);
   // stop it, the party score screen only plays the background music

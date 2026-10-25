@@ -1405,6 +1405,14 @@ begin
 
   Interaction := -1;
 
+  // party mode: players have no avatars, the avatar picture would only be an
+  // empty placeholder (the team is shown by its color)
+  if IsPartyRound then
+    for I := 1 to PlayersPlay do
+      if (I <= High(AvatarStaticRef)) and (AvatarStaticRef[I] >= 0) and
+         (AvatarStaticRef[I] <= High(Statics)) then
+        Statics[AvatarStaticRef[I]].Visible := false;
+
   RefreshTexts;
 
   // SingStar style: the sung song is not played again on the score screen;

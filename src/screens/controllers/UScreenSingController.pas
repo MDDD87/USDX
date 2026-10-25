@@ -86,6 +86,7 @@ type
     procedure SaveLocalScores;
     function PartyRoundSavesHighscores: boolean;
     function GetHighscoreName(PlayerIndex: integer): UTF8String;
+    procedure RecordPartyPerformances;
   public
     CheckPlayerConfigOnNextSong: boolean;
     eSongLoaded: THookableEvent; //< event is called after lyrics of a song are loaded on OnShow
@@ -1781,6 +1782,7 @@ begin
           for I := 0 to num - 1 do
             Player[I] := PlaylistMedley.Stats[len].Player[I];
 
+        RecordPartyPerformances;
         Party.CallAfterSing;
         FadeOut:=true;
       end;
@@ -1797,7 +1799,10 @@ begin
     PlaylistMedley.Stats[0].SongTitle := CurrentSong.Title;
 
     if not FadeOut then
+    begin
+      RecordPartyPerformances;
       Party.CallAfterSing;
+    end;
 
     FadeOut := true;
   end;
@@ -2027,6 +2032,26 @@ begin
 
   if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
     Result := Party.GetScoreName(PlayerIndex);
+end;
+
+{ party mode: remembers the best single performance of the party for the
+  party winner screen (not for Pass the Mic, where a whole team sings) }
+procedure TScreenSingController.RecordPartyPerformances;
+var
+  I: integer;
+  Song: UTF8String;
+begin
+  if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
+     Party.IsTeamScoreRound then
+    Exit;
+
+  if ScreenSong.PartyMedley then
+    Song := Language.Translate('MODE_' + UpperCase(Party.CurrentModeName) + '_NAME')
+  else
+    Song := CurrentSong.Title;
+
+  for I := 0 to PlayersPlay - 1 do
+    Party.RecordPerformance(Party.GetSingerName(I), Song, Player[I].ScoreTotalInt);
 end;
 
 procedure TScreenSingController.AutoSendScore;
