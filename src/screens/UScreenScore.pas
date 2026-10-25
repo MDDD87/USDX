@@ -1449,6 +1449,12 @@ begin
   if IsPartyRound and (PlayerIndex <= High(Party.Teams)) then
   begin
     TeamName := UTF8String(Party.Teams[PlayerIndex].Name);
+    // Pass the Mic: several team members sang, show only the team name
+    if Party.IsTeamScoreRound then
+    begin
+      Result := TeamName;
+      Exit;
+    end;
     Result := Party.GetSingerName(PlayerIndex);
     if (Result = '') then
       Result := TeamName

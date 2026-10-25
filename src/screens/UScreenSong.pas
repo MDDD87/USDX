@@ -3894,7 +3894,34 @@ procedure TScreenSong.SelectRandomSong;
 var
   I, I2, Count, RealTarget: integer;
   Target: cardinal;
+  AllowSung: boolean;
+
+  { party mode: songs already sung in this party are skipped, unless all
+    visible (non-duet) songs have already been sung }
+  function UnsungSongExists(OnlyVisible: boolean): boolean;
+  var
+    K: integer;
+  begin
+    Result := false;
+    for K := 0 to High(CatSongs.Song) do
+      if (CatSongs.Song[K].Visible or not OnlyVisible) and not CatSongs.Song[K].Main and
+         not CatSongs.Song[K].isDuet and not Party.SongAlreadySung(K) then
+        Exit(true);
+  end;
+
+  function UnsungVisibleSongExists: boolean;
+  begin
+    Result := UnsungSongExists(true);
+  end;
+
+  function Selectable(SongIndex: integer): boolean;
+  begin
+    Result := not CatSongs.Song[SongIndex].isDuet and
+              (AllowSung or not Party.SongAlreadySung(SongIndex));
+  end;
+
 begin
+  AllowSung := true;
   if (CatSongs.VisibleSongs <= 0) then
     Exit;
   case PlayListMan.Mode of
@@ -3903,9 +3930,12 @@ begin
           // when tabs are activated then use tab method
           if (Ini.TabsAtStartup = 1) then
           begin
+            // classic party: prefer a category that still has unsung songs
+            AllowSung := (Mode <> smPartyClassic) or not UnsungSongExists(false);
             repeat
               I2 := Low(CatSongs.Song) + Random(High(CatSongs.Song) + 1 - Low(CatSongs.Song));
-            until CatSongs.Song[I2].Main = false;
+            until (CatSongs.Song[I2].Main = false) and
+                  (AllowSung or not Party.SongAlreadySung(I2));
 
             // search cat
             for I := I2 downto Low(CatSongs.Song) do
@@ -3928,6 +3958,7 @@ begin
             // duets not playable
             if (Mode = smPartyClassic) then
             begin
+              AllowSung := not UnsungVisibleSongExists;
               repeat
                 Target := Random(CatSongs.VisibleSongs);
 
@@ -3941,7 +3972,7 @@ begin
                     Inc(Count);
                 until (Count = Target);
 
-              until not(CatSongs.Song[RealTarget].isDuet);
+              until Selectable(RealTarget);
             end
             else
               Target := Random(CatSongs.VisibleSongs);
@@ -3955,6 +3986,7 @@ begin
             // duets not playable
             if (Mode = smPartyClassic) then
             begin
+              AllowSung := not UnsungVisibleSongExists;
               repeat
                 Target := Random(CatSongs.VisibleSongs);
 
@@ -3968,7 +4000,7 @@ begin
                     Inc(Count);
                 until (Count = Target);
 
-              until not(CatSongs.Song[RealTarget].isDuet);
+              until Selectable(RealTarget);
             end
             else
               Target := Random(CatSongs.VisibleSongs);
@@ -3989,6 +4021,7 @@ begin
           // duets not playable
           if (Mode = smPartyClassic) then
           begin
+            AllowSung := not UnsungVisibleSongExists;
             repeat
               Target := Random(CatSongs.VisibleSongs);
 
@@ -4002,7 +4035,7 @@ begin
                   Inc(Count);
               until (Count = Target);
 
-            until not(CatSongs.Song[RealTarget].isDuet);
+            until Selectable(RealTarget);
           end
           else
             Target := Random(CatSongs.VisibleSongs);
@@ -4020,6 +4053,7 @@ begin
           // duets not playable
           if (Mode = smPartyClassic) then
           begin
+            AllowSung := not UnsungVisibleSongExists;
             repeat
               Target := Random(CatSongs.VisibleSongs);
 
@@ -4033,7 +4067,7 @@ begin
                   Inc(Count);
               until (Count = Target);
 
-            until not(CatSongs.Song[RealTarget].isDuet);
+            until Selectable(RealTarget);
           end
           else
             Target := Random(CatSongs.VisibleSongs);
@@ -4210,7 +4244,7 @@ begin
   PartyMedley := false;
 
   // party medley round: build the medley from the party song pool
-  if (Mode in [smPartyClassic, smPartyFree]) and Party.IsMedleyRound and
+  if (Mode in [smPartyClassic, smPartyFree]) and Party.IsAnyMedleyRound and
      (PartyMedleyFailedRound <> Party.CurrentRound) then
   begin
     if not PreparePartyMedley(Interaction) then
@@ -4223,7 +4257,9 @@ begin
     end;
   end;
 
-  if (Mode = smPartyFree) and not PartyMedley then
+  // remember the song, so the random song selection (classic party) and the
+  // medley do not suggest it again
+  if (Mode in [smPartyClassic, smPartyFree]) and not PartyMedley then
     Party.SaveSungPartySong(Interaction);
 
   StopMusicPreview();
@@ -4271,9 +4307,8 @@ begin
 end;
 
 function TScreenSong.PreparePartyMedley(FirstSong: integer): boolean;
-const
-  PARTY_MEDLEY_SONGS = 5; // number of songs in a party medley (SingStar: 5)
 var
+  SongCount: integer;
   Unsung, Sung: TVisArr;
   I, J, SongNr: integer;
   AlreadySung: boolean;
@@ -4315,6 +4350,8 @@ begin
   Result := false;
   MakeMedley := false;
   SetLength(PlaylistMedley.Song, 0);
+  // medley: 5 songs, micro medley: 8 songs
+  SongCount := Party.MedleySongCount;
 
   // the selected song is the first song of the medley
   TryAdd(FirstSong);
@@ -4347,9 +4384,9 @@ begin
     end;
   end;
 
-  while (Length(PlaylistMedley.Song) < PARTY_MEDLEY_SONGS) and (Length(Unsung) > 0) do
+  while (Length(PlaylistMedley.Song) < SongCount) and (Length(Unsung) > 0) do
     TryAdd(TakeRandom(Unsung));
-  while (Length(PlaylistMedley.Song) < PARTY_MEDLEY_SONGS) and (Length(Sung) > 0) do
+  while (Length(PlaylistMedley.Song) < SongCount) and (Length(Sung) > 0) do
     TryAdd(TakeRandom(Sung));
 
   // a medley needs at least two songs

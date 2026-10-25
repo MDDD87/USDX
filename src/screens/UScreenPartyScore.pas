@@ -338,6 +338,10 @@ begin
     Statics[StaticTeam3Deco].Visible := false;
   end;
 
+  // the score and highscore screens play the sung song (Feature 1b);
+  // stop it, the party score screen only plays the background music
+  AudioPlayback.Stop;
+
   //start Background-Music
   SoundLib.StartBgMusic;
 end;
