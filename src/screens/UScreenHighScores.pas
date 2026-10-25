@@ -82,6 +82,7 @@ type
       IsFadingOut:    boolean;
 
       constructor Create; override;
+      function NextScreen: PMenu;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
       procedure OnShow; override;
@@ -102,6 +103,8 @@ uses
   UMain,
   UIni,
   UNote,
+  UParty,
+  USong,
   UUnicodeUtils;
 
 function TrackNumber(TrackMask: integer): integer;
@@ -305,6 +308,16 @@ begin
   Text[TextWhereAmI].Text := FormatEntryCountText(Theme.HighScores.TextWhereAmI.Text);
 end;
 
+{ party mode (Feature 1b): after the highscores the party goes on with the
+  party score screen instead of returning to the song selection }
+function TScreenHighScores.NextScreen: PMenu;
+begin
+  if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+    Result := @ScreenPartyScore
+  else
+    Result := @ScreenSong;
+end;
+
 function TScreenHighScores.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin
   Result := true;
@@ -327,7 +340,7 @@ begin
         begin
           if (not IsFadingOut) then
           begin
-            FadeTo(@ScreenSong);
+            FadeTo(NextScreen);
             IsFadingOut := true;
           end;
         end;
@@ -429,7 +442,7 @@ begin
   Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
   if Length(CurrentSong.Score[Player[0].Level]) = 0 then
-    FadeTo(@ScreenSong); //if there are no scores to show, go to next screen
+    FadeTo(NextScreen); //if there are no scores to show, go to next screen
 
   ShowScoresForDifficulty(Player[0].Level);
 end;

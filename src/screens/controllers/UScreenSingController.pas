@@ -261,7 +261,7 @@ begin
       // restart song
       SDLK_R:
       begin
-        if ScreenSong.Mode = smMedley then Exit;
+        if ScreenSong.MedleyActive then Exit;
         for i1 := 0 to High(Player) do
         with Player[i1] do
         begin
@@ -542,7 +542,7 @@ begin
       begin
         // record sound hack:
         //Sound[0].BufferLong
-        if ScreenSong.Mode = smMedley then
+        if ScreenSong.MedleyActive then
           PlaylistMedley.NumMedleySongs := PlaylistMedley.CurrentMedleySong;
 
         Finish;
@@ -693,6 +693,7 @@ end;
 
 procedure TScreenSingController.OnShow;
 var
+  I:         integer;
   BadPlayer: integer;
   Col, ColP1, ColP2: TRGB;
 begin
@@ -716,8 +717,14 @@ begin
   // prepare players
   SetLength(Player, PlayersPlay);
 
+  // party mode scores with the party difficulty (see UNote), so the players
+  // get this difficulty for the score and highscore screens
+  if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+    for I := 0 to PlayersPlay - 1 do
+      Player[I].Level := Ini.Difficulty;
+
   //Reset Player Medley stats
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
   begin
     PlaylistMedley.CurrentMedleySong:=1;
 
@@ -727,7 +734,7 @@ begin
 
   fTimebarMode := TTimebarMode(Ini.SingTimebarMode);
 
-  if (ScreenSong.Mode = smMedley) then
+  if ScreenSong.MedleyActive then
     CatSongs.Selected := PlaylistMedley.Song[PlaylistMedley.CurrentMedleySong-1];
 
   CurrentSong := CatSongs.Song[CatSongs.Selected];
@@ -892,7 +899,7 @@ begin
   else
     AudioPlayback.Open(CurrentSong.Path.Append(CurrentSong.Audio), CurrentSong.Path.Append(CurrentSong.Karaoke));
 
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
     AudioPlayback.SetVolume(0.1)
   else
     AudioPlayback.SetVolume(1.0);
@@ -928,7 +935,7 @@ begin
   LyricsState.Start(true);
 
   // start music
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
     AudioPlayback.FadeIn(CurrentSong.Medley.FadeIn_time, 1.0)
   else
     AudioPlayback.Play();
@@ -946,7 +953,7 @@ var
   I, len:  integer;
 
 begin
-  if ScreenSong.Mode <> smMedley then
+  if not ScreenSong.MedleyActive then
   begin
     // error loading song -> go back to previous screen and show some error message
     Display.AbortScreenChange;
@@ -1045,7 +1052,7 @@ begin
 
   PlaylistMedley.ApplausePlayed := false;
 
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     if length(PlaylistMedley.Song) >= PlaylistMedley.CurrentMedleySong then
     begin
@@ -1088,7 +1095,7 @@ begin
     Exit;
   end;
 
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     if (CurrentSong.Medley.Source < msCalculated) or (Length(CurrentSong.Tracks) = 0) then
     begin
@@ -1115,7 +1122,7 @@ begin
     fCountIn := false;
 
   // Set up Medley timings
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     CurrentSong.SetMedleyMode();
 
@@ -1165,7 +1172,7 @@ begin
       fCurrentVideo := fVideoClip;
       fCurrentVideo.SetAspectCorrection(BackgroundAspectCorrection);
       fShowVisualization := false;
-      if ScreenSong.Mode = smMedley then
+      if ScreenSong.MedleyActive then
         fCurrentVideo.Position := CurrentSong.VideoGAP + MedleyStart
       else
         fCurrentVideo.Position := CurrentSong.VideoGAP + CurrentSong.Start;
@@ -1231,7 +1238,7 @@ begin
   // prepare lyrics timer
   LyricsState.Reset();
 
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     LyricsState.SetCurrentTime(MedleyStart);
     LyricsState.StartTime := CurrentSong.Gap;
@@ -1310,7 +1317,7 @@ begin
 
   eSongLoaded.CallHookChain(False);
 
-  if (ScreenSong.Mode = smMedley) and (PlaylistMedley.CurrentMedleySong>1) then
+  if ScreenSong.MedleyActive and (PlaylistMedley.CurrentMedleySong>1) then
     onShowFinish;
 end;
 
@@ -1643,7 +1650,7 @@ begin
 
   SetFontItalic(false);
 
-  if ScreenSong.Mode = smMedley then
+  if ScreenSong.MedleyActive then
   begin
     if not FadeOut then
     begin
@@ -1708,6 +1715,13 @@ begin
           PlaylistMedley.Stats[len].Player[I].ScoreGolden := round(
             PlaylistMedley.Stats[len].Player[I].ScoreGolden / len);
         end;
+
+        // party medley: the party ranking uses Player[].ScoreTotalInt, so
+        // it has to contain the result of the whole medley, not only the
+        // result of the last song
+        if ScreenSong.PartyMedley then
+          for I := 0 to num - 1 do
+            Player[I] := PlaylistMedley.Stats[len].Player[I];
 
         Party.CallAfterSing;
         FadeOut:=true;
@@ -1927,42 +1941,12 @@ begin
 end;
 
 { Returns true if the party round that was just played may be saved to the
-  normal local highscores. Only round types with a complete song and the
-  normal scoring are allowed. For random rounds the actually played mode is
-  stored in Party.Rounds, so it is checked here as well. }
+  normal local highscores. The decision is made centrally in
+  TPartyGame.RoundSavesHighscores, which also decides whether the highscore
+  screen is shown afterwards (Feature 1b). }
 function TScreenSingController.PartyRoundSavesHighscores: boolean;
-const
-  // names of the party modes (Mode.Name in game/plugins/*.usdx), lower case
-  ALLOWED_MODES: array[0..4] of string = (
-    'duel',        // Duel
-    'blind',       // Blind (notes hidden)
-    'blindlyrics', // Blind (lyrics hidden)
-    'blindtotal',  // Blind (notes and lyrics hidden)
-    'deaf'         // music muted at times, normal scoring
-  );
-var
-  RoundIdx, ModeIndex, I: integer;
-  ModeName: string;
 begin
-  Result := false;
-  if not Party.bPartyGame then
-    Exit;
-
-  RoundIdx := Party.CurrentRound;
-  if (RoundIdx < 0) or (RoundIdx > High(Party.Rounds)) then
-    Exit;
-
-  ModeIndex := Party.Rounds[RoundIdx].Mode;
-  if (ModeIndex < 0) or (ModeIndex > High(Party.Modes)) then
-    Exit;
-
-  ModeName := LowerCase(Party.Modes[ModeIndex].Name);
-  for I := Low(ALLOWED_MODES) to High(ALLOWED_MODES) do
-    if (ModeName = ALLOWED_MODES[I]) then
-    begin
-      Result := true;
-      Exit;
-    end;
+  Result := Party.bPartyGame and Party.RoundSavesHighscores;
 end;
 
 { Name under which the score of Player[PlayerIndex] is saved.
@@ -1974,13 +1958,7 @@ begin
   Result := Player[PlayerIndex].Name;
 
   if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
-  begin
-    Result := '';
-    if (PlayerIndex >= 0) and (PlayerIndex <= High(Party.Teams)) then
-      with Party.Teams[PlayerIndex] do
-        if (NextPlayer >= 0) and (NextPlayer <= High(Players)) then
-          Result := UTF8String(Trim(Players[NextPlayer].Name));
-  end;
+    Result := Party.GetSingerName(PlayerIndex);
 end;
 
 procedure TScreenSingController.AutoSendScore;
