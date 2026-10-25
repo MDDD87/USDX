@@ -78,6 +78,7 @@ type
     fStartTime, fFirstNote: real;
 
     procedure LoadNextSong();
+    procedure ApplyPartyMedleyTiming();
     procedure SongError();
     procedure ResetLinesAndLyrics();
     procedure ClearLyricEngines();
@@ -1017,6 +1018,47 @@ begin
   end;
 end;
 
+{ party medley (Feature 3): the medley section of the current song is
+  limited to Party.MedleySectionSeconds (cut at the end of a lyrics line) and
+  the lead-in is shortened to PARTY_MEDLEY_LEADIN seconds.
+  The changed values only live in the loaded song: TSong.Analyse resets the
+  medley data every time a song is loaded, so the normal medley mode and the
+  song preview are not affected. }
+procedure TScreenSingController.ApplyPartyMedleyTiming();
+var
+  LineIndex, LastNote: integer;
+  SectionStart, LineEndBeat: integer;
+  MaxEndTime: real;
+begin
+  if (Length(CurrentSong.Tracks) = 0) then
+    Exit;
+
+  CurrentSong.Medley.FadeIn_time := PARTY_MEDLEY_LEADIN;
+
+  SectionStart := CurrentSong.Medley.StartBeat;
+  MaxEndTime := GetTimeFromBeat(SectionStart) + Party.MedleySectionSeconds;
+  if (GetTimeFromBeat(CurrentSong.Medley.EndBeat) <= MaxEndTime) then
+    Exit; // section is already short enough
+
+  // first lyrics line of the section that ends after the maximum length
+  // (no "with" here: the track record has its own field named "High")
+  for LineIndex := 0 to System.High(CurrentSong.Tracks[0].Lines) do
+  begin
+    LastNote := System.High(CurrentSong.Tracks[0].Lines[LineIndex].Notes);
+    if (LastNote < 0) or (CurrentSong.Tracks[0].Lines[LineIndex].Notes[0].StartBeat < SectionStart) then
+      Continue;
+
+    LineEndBeat := CurrentSong.Tracks[0].Lines[LineIndex].Notes[LastNote].StartBeat +
+                   CurrentSong.Tracks[0].Lines[LineIndex].Notes[LastNote].Duration;
+    if (GetTimeFromBeat(LineEndBeat) >= MaxEndTime) then
+    begin
+      if (LineEndBeat > SectionStart) and (LineEndBeat < CurrentSong.Medley.EndBeat) then
+        CurrentSong.Medley.EndBeat := LineEndBeat;
+      Break;
+    end;
+  end;
+end;
+
 procedure TScreenSingController.LoadNextSong();
 var
   Color:      TRGB;
@@ -1124,6 +1166,11 @@ begin
   // Set up Medley timings
   if ScreenSong.MedleyActive then
   begin
+    // party medley: shorter sections and a short lead-in (before the notes
+    // outside the section are disabled by SetMedleyMode)
+    if ScreenSong.PartyMedley then
+      ApplyPartyMedleyTiming();
+
     CurrentSong.SetMedleyMode();
 
     if (PlaylistMedley.NumMedleySongs > 1) then
@@ -1142,6 +1189,15 @@ begin
       MedleyStart := GetTimeFromBeat(CurrentSong.Medley.StartBeat) - CurrentSong.Medley.FadeIn_time;
     if MedleyStart<0 then
       MedleyStart := 0;
+
+    // party medley: exactly PARTY_MEDLEY_LEADIN seconds lead-in with
+    // countdown (the code above may start a whole lyrics line earlier)
+    if ScreenSong.PartyMedley then
+    begin
+      MedleyStart := GetTimeFromBeat(CurrentSong.Medley.StartBeat) - PARTY_MEDLEY_LEADIN;
+      if MedleyStart < 0 then
+        MedleyStart := 0;
+    end;
 
     MedleyEnd := GetTimeFromBeat(CurrentSong.Medley.EndBeat) + CurrentSong.Medley.FadeOut_time;
   end;
@@ -1918,6 +1974,7 @@ var
   Sung: boolean;
   Score: integer;
   ScoreName: UTF8String;
+  TrackMask: integer;
 begin
   Sung := false;
 
@@ -1927,10 +1984,15 @@ begin
     begin
       Score := Round(Player[I].ScoreTotalInt);
       ScoreName := GetHighscoreName(I);
-      // no score without a personal name (never save under a team name)
+      TrackMask := 1 shl Player[I].Track;
+      // Pass the Mic: the score belongs to the team (marked as team score)
+      if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and
+         Party.IsTeamScoreRound then
+        TrackMask := PARTY_TEAM_SCORE_TRACKMASK;
+      // no score without a name (a single person or, in team score rounds, the team)
       if (Score > 0) and (ScoreName <> '') then
       begin
-        DataBase.AddScore(CurrentSong, Player[I].Level, Length(CurrentSong.Tracks), 1 shl Player[I].Track, ScoreName, Score);
+        DataBase.AddScore(CurrentSong, Player[I].Level, Length(CurrentSong.Tracks), TrackMask, ScoreName, Score);
         Sung := true;
       end;
     end;
@@ -1951,14 +2013,15 @@ end;
 
 { Name under which the score of Player[PlayerIndex] is saved.
   Normal mode: the player name. Party mode: Player[I] belongs to team I, so
-  the name of the team member who sang this round is used. If there is no
-  personal name, an empty string is returned and the score is not saved. }
+  the name of the team member who sang this round is used, or the team name
+  in Pass the Mic rounds (see TPartyGame.GetScoreName). If there is no name,
+  an empty string is returned and the score is not saved. }
 function TScreenSingController.GetHighscoreName(PlayerIndex: integer): UTF8String;
 begin
   Result := Player[PlayerIndex].Name;
 
   if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
-    Result := Party.GetSingerName(PlayerIndex);
+    Result := Party.GetScoreName(PlayerIndex);
 end;
 
 procedure TScreenSingController.AutoSendScore;

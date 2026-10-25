@@ -217,6 +217,8 @@ type
     function GetWinnerString(Round: integer): UTF8String;
 
     procedure SaveSungPartySong(ID: integer);
+    { true if song ID (index in CatSongs) was already sung in this party }
+    function SongAlreadySung(ID: integer): boolean;
     function SongNotSungAndNotDuet(ID, N_DuetSongs: integer): boolean;
 
     { name of the party mode of the current round in lower case
@@ -236,6 +238,24 @@ type
       round, '' if there is none }
     function GetSingerName(Team: integer): UTF8String;
 
+    { true if several team members sing in turn in the current round
+      (Pass the Mic / teamduel.usdx). The score belongs to the team: it is
+      shown and saved under the team name. }
+    function IsTeamScoreRound: boolean;
+
+    { true if the current round is a medley or micro medley round }
+    function IsAnyMedleyRound: boolean;
+
+    { party medley parameters of the current round:
+      number of songs and maximum length of each section in seconds }
+    function MedleySongCount: integer;
+    function MedleySectionSeconds: integer;
+
+    { name under which the score of team Team is shown on the score screen
+      and saved in the highscores: the team name in team score rounds,
+      otherwise the singer's name ('' if there is none) }
+    function GetScoreName(Team: integer): UTF8String;
+
     destructor  Destroy; override;
   end;
 
@@ -251,6 +271,20 @@ const
 
   { maximal amount of players for party mode }
   Party_Players_Max = 4;
+
+  { TrackMask of highscore entries that belong to a team (Pass the Mic)
+    instead of a single person. Normal entries use 1 shl Track (1, 2, ...).
+    The marker allows moving team entries to a separate team list later. }
+  PARTY_TEAM_SCORE_TRACKMASK = 0;
+
+  { party medley (SingStar style): number of songs, maximum length of each
+    section in seconds (cut at the end of a lyrics line, so a section can be
+    a few seconds longer) and lead-in with countdown before each section }
+  PARTY_MEDLEY_SONGS        = 5;
+  PARTY_MEDLEY_SECONDS      = 30;
+  PARTY_MICROMEDLEY_SONGS   = 8;
+  PARTY_MICROMEDLEY_SECONDS = 15;
+  PARTY_MEDLEY_LEADIN       = 3;
 
   { amount of jokers each team gets at the beginning of the game }
   Party_Count_Jokers = 5;
@@ -1082,15 +1116,54 @@ begin
   Result := (CurrentModeName = 'medley');
 end;
 
+function TPartyGame.IsAnyMedleyRound: boolean;
+begin
+  Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley');
+end;
+
+function TPartyGame.MedleySongCount: integer;
+begin
+  if (CurrentModeName = 'micromedley') then
+    Result := PARTY_MICROMEDLEY_SONGS
+  else
+    Result := PARTY_MEDLEY_SONGS;
+end;
+
+function TPartyGame.MedleySectionSeconds: integer;
+begin
+  if (CurrentModeName = 'micromedley') then
+    Result := PARTY_MICROMEDLEY_SECONDS
+  else
+    Result := PARTY_MEDLEY_SECONDS;
+end;
+
+function TPartyGame.IsTeamScoreRound: boolean;
+begin
+  Result := (CurrentModeName = 'teamduel');
+end;
+
+function TPartyGame.GetScoreName(Team: integer): UTF8String;
+begin
+  Result := '';
+  if IsTeamScoreRound then
+  begin
+    if (Team >= 0) and (Team <= High(Teams)) then
+      Result := UTF8String(Trim(Teams[Team].Name));
+  end
+  else
+    Result := GetSingerName(Team);
+end;
+
 function TPartyGame.RoundSavesHighscores: boolean;
 const
   // party modes with a complete song and the normal scoring (lower case)
-  ALLOWED_MODES: array[0..4] of string = (
+  ALLOWED_MODES: array[0..5] of string = (
     'duel',        // Duel
     'blind',       // Blind (notes hidden)
     'blindlyrics', // Blind (lyrics hidden)
     'blindtotal',  // Blind (notes and lyrics hidden)
-    'deaf'         // music muted at times, normal scoring
+    'deaf',        // music muted at times, normal scoring
+    'teamduel'     // Pass the Mic: saved under the team name (team score)
   );
 var
   ModeName: string;
@@ -1116,6 +1189,16 @@ begin
     with Teams[Team] do
       if (NextPlayer >= 0) and (NextPlayer <= High(Players)) then
         Result := UTF8String(Trim(Players[NextPlayer].Name));
+end;
+
+function TPartyGame.SongAlreadySung(ID: integer): boolean;
+var
+  I: integer;
+begin
+  Result := false;
+  for I := 0 to High(SungPartySongs) do
+    if (SungPartySongs[I] = ID) then
+      Exit(true);
 end;
 
 procedure TPartyGame.SaveSungPartySong(ID: integer);

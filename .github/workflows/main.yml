@@ -82,7 +82,15 @@ jobs:
           export FPCMAKE="/c/FPC/$FPC_VERSION/bin/i386-win32/fpcmake"
           ./autogen.sh
           ./configure --with-opencv --with-libprojectM
-          make
+          # compiler errors are also reported as annotations, so they can be
+          # read without downloading the full log
+          set +e
+          make 2>&1 | tee build.log
+          status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then
+            grep -E "(Error|Fatal):" build.log | head -n 20 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $status
       - name: Remove debug files
         run: |
           del game\*.debug
