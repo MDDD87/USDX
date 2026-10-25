@@ -1041,22 +1041,22 @@ begin
     Exit; // section is already short enough
 
   // first lyrics line of the section that ends after the maximum length
-  with CurrentSong.Tracks[0] do
-    for LineIndex := 0 to High(Lines) do
-    begin
-      LastNote := High(Lines[LineIndex].Notes);
-      if (LastNote < 0) or (Lines[LineIndex].Notes[0].StartBeat < SectionStart) then
-        Continue;
+  // (no "with" here: the track record has its own field named "High")
+  for LineIndex := 0 to System.High(CurrentSong.Tracks[0].Lines) do
+  begin
+    LastNote := System.High(CurrentSong.Tracks[0].Lines[LineIndex].Notes);
+    if (LastNote < 0) or (CurrentSong.Tracks[0].Lines[LineIndex].Notes[0].StartBeat < SectionStart) then
+      Continue;
 
-      LineEndBeat := Lines[LineIndex].Notes[LastNote].StartBeat +
-                     Lines[LineIndex].Notes[LastNote].Duration;
-      if (GetTimeFromBeat(LineEndBeat) >= MaxEndTime) then
-      begin
-        if (LineEndBeat > SectionStart) and (LineEndBeat < CurrentSong.Medley.EndBeat) then
-          CurrentSong.Medley.EndBeat := LineEndBeat;
-        Break;
-      end;
+    LineEndBeat := CurrentSong.Tracks[0].Lines[LineIndex].Notes[LastNote].StartBeat +
+                   CurrentSong.Tracks[0].Lines[LineIndex].Notes[LastNote].Duration;
+    if (GetTimeFromBeat(LineEndBeat) >= MaxEndTime) then
+    begin
+      if (LineEndBeat > SectionStart) and (LineEndBeat < CurrentSong.Medley.EndBeat) then
+        CurrentSong.Medley.EndBeat := LineEndBeat;
+      Break;
     end;
+  end;
 end;
 
 procedure TScreenSingController.LoadNextSong();
