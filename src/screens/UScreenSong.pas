@@ -101,6 +101,8 @@ type
       PartyMedley:  boolean;
       // songs hidden for a party duet round (shown again afterwards)
       DuetRoundHiddenSongs: array of integer;
+      // duet songs hidden in the party (shown again in the normal mode)
+      PartyHiddenDuets: array of integer;
       PartyMedleyFailedRound: integer; // round in which a medley could not be built
 
       //Video Icon Mod
@@ -4246,9 +4248,26 @@ begin
     end
     else
       for I := 0 to High(CatSongs.Song) do
-        if CatSongs.Song[I].isDuet then
+        if CatSongs.Song[I].isDuet and CatSongs.Song[I].Visible then
+        begin
           CatSongs.Song[I].Visible := false;
+          SetLength(PartyHiddenDuets, Length(PartyHiddenDuets) + 1);
+          PartyHiddenDuets[High(PartyHiddenDuets)] := I;
+        end;
     // Reset visible-index cache so VisibleIndex() recomputes correctly
+    CatSongs.ResetVisibleIndexCache;
+  end
+  else if (Length(PartyHiddenDuets) > 0) then
+  begin
+    // back in another mode after a party: show the duets again (original
+    // USDX left them hidden until the next start)
+    // only in the list of all songs (with tabs or playlists the list is
+    // built again anyway)
+    if (Ini.TabsAtStartup = 0) and (CatSongs.CatNumShow <> -3) then
+      for I := 0 to High(PartyHiddenDuets) do
+        if (PartyHiddenDuets[I] >= 0) and (PartyHiddenDuets[I] <= High(CatSongs.Song)) then
+          CatSongs.Song[PartyHiddenDuets[I]].Visible := true;
+    SetLength(PartyHiddenDuets, 0);
     CatSongs.ResetVisibleIndexCache;
   end;
 end;
