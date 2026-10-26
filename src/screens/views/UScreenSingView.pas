@@ -1083,13 +1083,40 @@ end;
 
 procedure TScreenSingView.DrawPartyTeamNumbers();
 var
-  I: integer;
+  I, TexIndex: integer;
   FontSize, TextW: real;
   NumText: UTF8String;
+  Tex: TTexture;
+  OldX, OldY, OldZ, OldW, OldH, OldAlpha: single;
+  OldReflection: boolean;
 begin
   // (no "with" here: the box record has fields named like local variables)
   for I := 0 to PartyNumberCount - 1 do
   begin
+    // filled box in team color: the score box texture of this team, drawn
+    // at the position of the avatar box (texture values restored afterwards,
+    // the score display uses the same texture)
+    TexIndex := PartyNumberBox[I].Num - 1;
+    if (TexIndex >= 0) and (TexIndex <= High(Tex_ScoreBG)) and
+       (Tex_ScoreBG[TexIndex] <> nil) then
+    begin
+      Tex := Tex_ScoreBG[TexIndex];
+      OldX := Tex.X; OldY := Tex.Y; OldZ := Tex.Z;
+      OldW := Tex.W; OldH := Tex.H; OldAlpha := Tex.Alpha;
+      OldReflection := Tex.Reflection;
+      Tex.X := PartyNumberBox[I].X;
+      Tex.Y := PartyNumberBox[I].Y;
+      Tex.Z := 0;
+      Tex.W := PartyNumberBox[I].W;
+      Tex.H := PartyNumberBox[I].H;
+      Tex.Alpha := 1;
+      Tex.Reflection := false;
+      Renderer.DrawTexture(Tex);
+      Tex.X := OldX; Tex.Y := OldY; Tex.Z := OldZ;
+      Tex.W := OldW; Tex.H := OldH; Tex.Alpha := OldAlpha;
+      Tex.Reflection := OldReflection;
+    end;
+
     NumText := IntToStr(PartyNumberBox[I].Num);
     FontSize := PartyNumberBox[I].H * 0.85;
     SetFontFamily(0);

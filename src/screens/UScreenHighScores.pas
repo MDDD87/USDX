@@ -87,6 +87,7 @@ type
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
       procedure OnShow; override;
       procedure ShowScoresForDifficulty(difficulty: integer);
+      procedure PlayNewHighscoreSound;
       function Draw: boolean; override;
   end;
 
@@ -442,9 +443,31 @@ begin
   Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
   if Length(CurrentSong.Score[Player[0].Level]) = 0 then
-    FadeTo(NextScreen); //if there are no scores to show, go to next screen
+    FadeTo(NextScreen) //if there are no scores to show, go to next screen
+  else
+    PlayNewHighscoreSound;
 
   ShowScoresForDifficulty(Player[0].Level);
+end;
+
+{ plays the optional sound 'score highscore.mp3' if a player of this song
+  is now number one of the highscore list (silent if the file is missing) }
+procedure TScreenHighScores.PlayNewHighscoreSound;
+var
+  I, Level: integer;
+begin
+  if (SoundLib.ScoreHighscore = nil) then
+    Exit;
+  Level := Player[0].Level;
+  if (Length(CurrentSong.Score[Level]) = 0) then
+    Exit;
+  for I := 0 to PlayersPlay - 1 do
+    if (Player[I].ScoreTotalInt > 0) and
+       (CurrentSong.Score[Level, 0].Score = Player[I].ScoreTotalInt) then
+    begin
+      AudioPlayback.PlaySound(SoundLib.ScoreHighscore);
+      Exit;
+    end;
 end;
 
 procedure TScreenHighScores.ShowScoresForDifficulty(difficulty: integer);

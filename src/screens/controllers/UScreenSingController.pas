@@ -2034,24 +2034,30 @@ begin
     Result := Party.GetScoreName(PlayerIndex);
 end;
 
-{ party mode: remembers the best single performance of the party for the
-  party winner screen (not for Pass the Mic, where a whole team sings) }
+{ party mode: remembers the best performances of the party for the party
+  winner screen (total score, note points, golden notes, line bonus).
+  Only complete songs with normal scoring count: the same round types that
+  save highscores, without Pass the Mic (a whole team sings) and without
+  medleys (only parts of songs). }
 procedure TScreenSingController.RecordPartyPerformances;
 var
   I: integer;
-  Song: UTF8String;
+  Name, Song: UTF8String;
 begin
   if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
-     Party.IsTeamScoreRound then
+     Party.IsTeamScoreRound or ScreenSong.PartyMedley or Party.IsAnyMedleyRound or
+     not Party.RoundSavesHighscores then
     Exit;
 
-  if ScreenSong.PartyMedley then
-    Song := Language.Translate('MODE_' + UpperCase(Party.CurrentModeName) + '_NAME')
-  else
-    Song := CurrentSong.Title;
-
+  Song := CurrentSong.Title;
   for I := 0 to PlayersPlay - 1 do
-    Party.RecordPerformance(Party.GetSingerName(I), Song, Player[I].ScoreTotalInt);
+  begin
+    Name := Party.GetSingerName(I);
+    Party.RecordPerformance(PARTY_BEST_TOTAL,  I, Name, Song, Player[I].ScoreTotalInt);
+    Party.RecordPerformance(PARTY_BEST_NOTES,  I, Name, Song, Player[I].ScoreInt);
+    Party.RecordPerformance(PARTY_BEST_GOLDEN, I, Name, Song, Player[I].ScoreGoldenInt);
+    Party.RecordPerformance(PARTY_BEST_LINE,   I, Name, Song, Player[I].ScoreLineInt);
+  end;
 end;
 
 procedure TScreenSingController.AutoSendScore;

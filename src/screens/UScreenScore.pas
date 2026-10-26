@@ -203,6 +203,7 @@ type
 
       procedure FillPlayerItems(PlayerNumber: integer);
       function  IsPartyRound: boolean;
+      procedure HideAvatarFrames(AvatarStatic: integer);
       function  GetPlayerDisplayName(PlayerIndex: integer): UTF8String;
       procedure LeaveScreen;
 
@@ -1411,7 +1412,10 @@ begin
     for I := 1 to PlayersPlay do
       if (I <= High(AvatarStaticRef)) and (AvatarStaticRef[I] >= 0) and
          (AvatarStaticRef[I] <= High(Statics)) then
+      begin
         Statics[AvatarStaticRef[I]].Visible := false;
+        HideAvatarFrames(AvatarStaticRef[I]);
+      end;
 
   RefreshTexts;
 
@@ -1571,6 +1575,38 @@ end;
 function TScreenScore.IsPartyRound: boolean;
 begin
   Result := Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]);
+end;
+
+{ party mode: hides the frames around a (hidden) avatar picture. The frames
+  are separate theme statics; they are found by position: a frame encloses
+  the avatar box and is not much larger than it. }
+procedure TScreenScore.HideAvatarFrames(AvatarStatic: integer);
+var
+  P, J, I: integer;
+  AX, AY, AW, AH: single;
+begin
+  if (Statics[AvatarStatic].Texture = nil) then
+    Exit;
+  AX := Statics[AvatarStatic].Texture.X;
+  AY := Statics[AvatarStatic].Texture.Y;
+  AW := Statics[AvatarStatic].Texture.W;
+  AH := Statics[AvatarStatic].Texture.H;
+  if (AW <= 0) or (AH <= 0) then
+    Exit;
+  // only the player statics (their visibility is set again in every OnShow)
+  for P := Low(PlayerStatic) to High(PlayerStatic) do
+  for J := 0 to High(PlayerStatic[P]) do
+  begin
+    I := PlayerStatic[P, J];
+    if (I < 0) or (I > High(Statics)) then
+      Continue;
+    if (I <> AvatarStatic) and (Statics[I].Texture <> nil) and
+       (Statics[I].Texture.X <= AX + 1) and (Statics[I].Texture.Y <= AY + 1) and
+       (Statics[I].Texture.X + Statics[I].Texture.W >= AX + AW - 1) and
+       (Statics[I].Texture.Y + Statics[I].Texture.H >= AY + AH - 1) and
+       (Statics[I].Texture.W <= AW * 1.5) and (Statics[I].Texture.H <= AH * 1.5) then
+      Statics[I].Visible := false;
+  end;
 end;
 
 { party mode: the person who sang (the team is shown by its color);

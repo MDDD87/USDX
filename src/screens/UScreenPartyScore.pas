@@ -264,6 +264,11 @@ begin
     Inc(Points, Party.RoundPoints(2));
   end;
 
+  // the "+N" has been added to the total now; hide it (shown again in OnShow)
+  Text[TextRoundPoints[0]].Visible := false;
+  Text[TextRoundPoints[1]].Visible := false;
+  Text[TextRoundPoints[2]].Visible := false;
+
   if (Points > 0) then
     AudioPlayback.PlaySound(SoundLib.ScoreNotes);
 end;

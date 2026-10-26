@@ -106,6 +106,14 @@ type
     Players: array of TParty_PlayerInfo;
   end;
 
+  { best performance of the party in one category (party winner screen) }
+  TParty_Best = record
+    Score: integer;
+    Name:  UTF8String;
+    Song:  UTF8String;
+    Team:  integer;
+  end;
+
   TPartyGame = class
   private
     CurRound: Integer;   //< indicates which of the elements of Rounds is played next (at the moment)
@@ -135,10 +143,9 @@ type
 
     SungPartySongs: array of integer;
 
-    // best single performance of the party (party winner screen)
-    BestScore: integer;
-    BestName:  UTF8String;
-    BestSong:  UTF8String;
+    // best performances of the party (party winner screen, page 2):
+    // total score, note points, golden note points, line bonus
+    Best: array[0..3] of TParty_Best;
 
     property CurrentRound: Integer read CurRound;
 
@@ -273,13 +280,20 @@ type
     { number of rounds team Team has won (first place, draws included) }
     function RoundsWon(Team: integer): integer;
 
-    { remembers the best single performance of the party }
-    procedure RecordPerformance(const Name, Song: UTF8String; Score: integer);
+    { remembers the best performance of the party in category Category
+      (PARTY_BEST_*); on a draw the first one stays }
+    procedure RecordPerformance(Category, Team: integer; const Name, Song: UTF8String; Score: integer);
 
     destructor  Destroy; override;
   end;
 
 const
+  { categories of the best performances (TPartyGame.Best) }
+  PARTY_BEST_TOTAL  = 0; // total score of a song
+  PARTY_BEST_NOTES  = 1; // note points
+  PARTY_BEST_GOLDEN = 2; // golden note points
+  PARTY_BEST_LINE   = 3; // line bonus
+
   { minimal amount of teams for party mode }
   Party_Teams_Min = 2;
 
@@ -372,9 +386,13 @@ begin
   SetLength(Teams, 0); //remove team info
   SetLength(Rounds, 0); //remove round info
 
-  BestScore := 0;
-  BestName := '';
-  BestSong := '';
+  for I := 0 to High(Best) do
+  begin
+    Best[I].Score := 0;
+    Best[I].Name := '';
+    Best[I].Song := '';
+    Best[I].Team := -1;
+  end;
 
   // clear times played
   for I := 0 to High(TimesPlayed) do
@@ -1210,13 +1228,16 @@ begin
           Inc(Result);
 end;
 
-procedure TPartyGame.RecordPerformance(const Name, Song: UTF8String; Score: integer);
+procedure TPartyGame.RecordPerformance(Category, Team: integer; const Name, Song: UTF8String; Score: integer);
 begin
-  if (Name <> '') and (Score > BestScore) then
+  if (Category < Low(Best)) or (Category > High(Best)) then
+    Exit;
+  if (Name <> '') and (Score > Best[Category].Score) then
   begin
-    BestScore := Score;
-    BestName := Name;
-    BestSong := Song;
+    Best[Category].Score := Score;
+    Best[Category].Name := Name;
+    Best[Category].Song := Song;
+    Best[Category].Team := Team;
   end;
 end;
 
