@@ -334,8 +334,12 @@ begin
     Text[TextBestName[I]].Text := ShortenName(Party.Best[I].Name, 20);
     Text[TextBestInfo[I]].Text := Format(Language.Translate('PARTY_WIN_BEST_INFO'),
       [Party.Best[I].Score, ShortenName(Party.Best[I].Song, 28)]);
-    J := GetTeamColor(Party.Best[I].Team);
-    if (Party.Best[I].Team >= 0) and (J <> -1) then
+    // (no color lookup without a team: "P0Dark" does not exist and the
+    //  result -1 does not fit into the cardinal of GetTeamColor)
+    J := -1;
+    if (Party.Best[I].Team >= 0) then
+      J := ColorExists('P' + IntToStr(Party.Best[I].Team + 1) + 'Dark');
+    if (J >= 0) then
     begin
       Statics[StaticBest[I]].Texture.ColR := Color[J].RGB.R;
       Statics[StaticBest[I]].Texture.ColG := Color[J].RGB.G;
