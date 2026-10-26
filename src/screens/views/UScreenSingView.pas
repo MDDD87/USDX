@@ -74,6 +74,13 @@ type
     TextP1:   integer;
     StaticP1Avatar: array [0..1] of integer;
 
+    // party mode: avatar boxes that show the team number (render coordinates)
+    PartyNumberCount: integer;
+    PartyNumberBox: array [0..2] of record
+      X, Y, W, H: real;
+      Num: integer;
+    end;
+
     // shown when game is in 2/4 player modus
     StaticP1TwoP: array [0..1] of integer;
     TextP1TwoP:   integer;
@@ -196,6 +203,10 @@ type
 
     procedure DrawMedleyCountdown();
     procedure DrawCountIn();
+
+    // party mode: team number instead of the empty avatar picture
+    procedure PreparePartyTeamNumbers();
+    procedure DrawPartyTeamNumbers();
     procedure DrawCountdown(timeDiff: real);
     function Draw: boolean;
 
@@ -720,6 +731,7 @@ begin
 
   // swap static textures to current screen ones
   SwapToScreen(ScreenAct);
+  PreparePartyTeamNumbers;
 
   // draw background picture (if any, and if no visualizations)
   // when we don't check for visualizations the visualizations would
@@ -931,6 +943,7 @@ begin
 
   // draw static menu (FG)
   ScreenSing.DrawFG;
+  DrawPartyTeamNumbers;
 
   //Medley Countdown
   if ScreenSong.MedleyActive then
@@ -1026,6 +1039,98 @@ begin
   end;
 end;
 
+{ party mode (classic/free, 2 or 3 teams): the avatar picture is only an
+  empty placeholder, because party players have no avatars. It is hidden and
+  the team number is drawn on the colored avatar frame instead (like the
+  S1/S2 marks in SingStar). }
+procedure TScreenSingView.PreparePartyTeamNumbers();
+
+  procedure AddBox(StaticIndex, Num: integer);
+  begin
+    if (StaticIndex < 0) or (StaticIndex > High(ScreenSing.Statics)) then
+      Exit;
+    if not ScreenSing.Statics[StaticIndex].Visible then
+      Exit;
+    ScreenSing.Statics[StaticIndex].Visible := false;
+    if (PartyNumberCount > High(PartyNumberBox)) then
+      Exit;
+    PartyNumberBox[PartyNumberCount].X := ScreenSing.Statics[StaticIndex].Texture.X;
+    PartyNumberBox[PartyNumberCount].Y := ScreenSing.Statics[StaticIndex].Texture.Y;
+    PartyNumberBox[PartyNumberCount].W := ScreenSing.Statics[StaticIndex].Texture.W;
+    PartyNumberBox[PartyNumberCount].H := ScreenSing.Statics[StaticIndex].Texture.H;
+    PartyNumberBox[PartyNumberCount].Num := Num;
+    Inc(PartyNumberCount);
+  end;
+
+begin
+  PartyNumberCount := 0;
+  if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+    Exit;
+
+  // with 2 or 3 teams the second screen shows the textures of screen 1
+  if (PlayersPlay = 2) then
+  begin
+    AddBox(StaticP1TwoPAvatar[0], 1);
+    AddBox(StaticP2RAvatar[0], 2);
+  end
+  else if (PlayersPlay = 3) then
+  begin
+    AddBox(StaticP1ThreePAvatar[0], 1);
+    AddBox(StaticP2MAvatar[0], 2);
+    AddBox(StaticP3RAvatar[0], 3);
+  end;
+end;
+
+procedure TScreenSingView.DrawPartyTeamNumbers();
+var
+  I, TexIndex: integer;
+  FontSize, TextW: real;
+  NumText: UTF8String;
+  Tex: TTexture;
+  OldX, OldY, OldZ, OldW, OldH, OldAlpha: single;
+  OldReflection: boolean;
+begin
+  // (no "with" here: the box record has fields named like local variables)
+  for I := 0 to PartyNumberCount - 1 do
+  begin
+    // filled box in team color: the score box texture of this team, drawn
+    // at the position of the avatar box (texture values restored afterwards,
+    // the score display uses the same texture)
+    TexIndex := PartyNumberBox[I].Num - 1;
+    if (TexIndex >= 0) and (TexIndex <= High(Tex_ScoreBG)) and
+       (Tex_ScoreBG[TexIndex] <> nil) then
+    begin
+      Tex := Tex_ScoreBG[TexIndex];
+      OldX := Tex.X; OldY := Tex.Y; OldZ := Tex.Z;
+      OldW := Tex.W; OldH := Tex.H; OldAlpha := Tex.Alpha;
+      OldReflection := Tex.Reflection;
+      Tex.X := PartyNumberBox[I].X;
+      Tex.Y := PartyNumberBox[I].Y;
+      Tex.Z := 0;
+      Tex.W := PartyNumberBox[I].W;
+      Tex.H := PartyNumberBox[I].H;
+      Tex.Alpha := 1;
+      Tex.Reflection := false;
+      Renderer.DrawTexture(Tex);
+      Tex.X := OldX; Tex.Y := OldY; Tex.Z := OldZ;
+      Tex.W := OldW; Tex.H := OldH; Tex.Alpha := OldAlpha;
+      Tex.Reflection := OldReflection;
+    end;
+
+    NumText := IntToStr(PartyNumberBox[I].Num);
+    FontSize := PartyNumberBox[I].H * 0.85;
+    SetFontFamily(0);
+    SetFontStyle(ftBoldHighRes);
+    SetFontItalic(false);
+    SetFontSize(FontSize);
+    SetFontColor(1, 1, 1, 1);
+    TextW := TextWidth(NumText);
+    SetFontPos(PartyNumberBox[I].X + (PartyNumberBox[I].W - TextW) / 2,
+               PartyNumberBox[I].Y + (PartyNumberBox[I].H - FontSize) / 2);
+    PrintText(NumText);
+  end;
+end;
+
 procedure TScreenSingView.DrawCountIn;
 var
   Pos: real;
@@ -1051,7 +1156,7 @@ begin
   SetFontStyle(ftBoldHighRes);
   SetFontItalic(false);
   SetFontSize(h);
-  SetFontColor(0.15, 0.30, 0.6, t);
+  SetFontColor(1, 1, 1, t); // white for better visibility on videos
   CountDownText := IntToStr(round(timeDiff - t + 1));
   w := TextWidth(PChar(CountDownText));
 

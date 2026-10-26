@@ -382,12 +382,12 @@ begin
   //nextRound Texts
   Text[TextNextRound].Text := Language.Translate('MODE_' + uppercase(Party.Modes[Party.Rounds[Party.CurrentRound].Mode].Name) + '_DESC');
 
-  // "Round X of Y: <round type>" instead of "Next players to the mics!",
-  // so it is clear which round type comes next
+  // the table below the subtitle shows the current standings; the round box
+  // shows "Round X of Y: <round type>", so it is clear what comes next
   if (SubtitleText >= 0) then
-    Text[SubtitleText].Text := Party.RoundCaption(Party.CurrentRound);
+    Text[SubtitleText].Text := Language.Translate('PARTY_ROUND_STANDINGS');
 
-  Text[TextNextRoundNo].Text := InttoStr(Party.CurrentRound + 1);
+  Text[TextNextRoundNo].Text := Party.RoundCaption(Party.CurrentRound);
   if (Length(Party.Teams) >= 1) then
   begin
     Text[TextNextPlayer1].Text := Party.Teams[0].Players[Party.Teams[0].NextPlayer].Name;

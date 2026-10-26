@@ -34,6 +34,7 @@ interface
 {$I switches.inc}
 
 uses
+  UCommon,
   UDisplay,
   UMenu,
   UMusic,
@@ -57,6 +58,7 @@ type
       procedure LoadCurrentSongScores;
       function ScaledSize(ThemeSize: integer): integer;
       procedure SetEntryVisible(EntryIndex: integer; Visible: boolean);
+      procedure LayoutHighlight(EntryIndex, LayoutIndex: integer);
       procedure UpdateEntryLayout;
       procedure UpdateHeaderText;
     public
@@ -74,6 +76,15 @@ type
       EntryTextSize: real;
 
       EntryNumberStatic: array of integer;
+      // background bar of a row: shown for entries of the song just sung
+      EntryHighlightStatic: array of integer;
+      // "New highscore!" box (new number one of the list)
+      StaticNewHighscore: integer;
+      TextNewHighscore:   integer;
+      // entry index (of the shown difficulty) per player of the song just
+      // sung, -1 if the player is not in the list
+      OwnEntry: array of integer;
+      OwnColor: array of TRGB;
       EntryNumberText:   array of integer;
       EntryNameText:     array of integer;
       EntryScoreText:    array of integer;
@@ -87,6 +98,8 @@ type
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
       procedure OnShow; override;
       procedure ShowScoresForDifficulty(difficulty: integer);
+      procedure PlayNewHighscoreSound;
+      procedure FindOwnEntries;
       function Draw: boolean; override;
   end;
 
@@ -99,6 +112,9 @@ uses
   UDataBase,
   UGraphic,
   UHelp,
+  ULanguage,
+  URenderer,
+  USkins,
   ULog,
   UMain,
   UIni,
@@ -106,6 +122,11 @@ uses
   UParty,
   USong,
   UUnicodeUtils;
+
+const
+  // row highlight bar (from the number box to the date)
+  HIGHLIGHT_X = 92;
+  HIGHLIGHT_W = 696;
 
 function TrackNumber(TrackMask: integer): integer;
 begin
@@ -259,6 +280,21 @@ begin
   Text[EntryDateText[EntryIndex]].Visible := Visible;
 end;
 
+{ the highlight bar covers the row: as high as the number box (scaled with
+  the text size), slightly larger }
+procedure TScreenHighScores.LayoutHighlight(EntryIndex, LayoutIndex: integer);
+var
+  H: integer;
+begin
+  H := ScaledSize(Theme.HighScores.RowNumberStatic.H) + 6;
+  Statics[EntryHighlightStatic[EntryIndex]].Texture.X := HIGHLIGHT_X;
+  Statics[EntryHighlightStatic[EntryIndex]].Texture.W := HIGHLIGHT_W;
+  Statics[EntryHighlightStatic[EntryIndex]].Texture.H := H;
+  Statics[EntryHighlightStatic[EntryIndex]].Texture.Y := EntryY(LayoutIndex) + Round(
+      (Theme.HighScores.RowNumberStatic.Y - Theme.HighScores.RowNameText.Y) *
+      EntryTextSize / Theme.HighScores.RowNameText.Size) - 3;
+end;
+
 procedure TScreenHighScores.UpdateEntryLayout;
 var
   I: integer;
@@ -290,6 +326,7 @@ begin
       LayoutIndex := LayoutEntryCount - 1;
 
     ApplyEntryStaticLayout(EntryNumberStatic[I], LayoutIndex, Theme.HighScores.RowNumberStatic);
+    LayoutHighlight(I, LayoutIndex);
 
     ApplyEntryTextLayout(EntryNumberText[I], LayoutIndex,
       Theme.HighScores.RowNumberText);
@@ -386,7 +423,7 @@ end;
 
 constructor TScreenHighScores.Create;
 var
-  I: integer;
+  I, Col: integer;
   ThemeText: TThemeText;
 begin
   inherited Create;
@@ -407,6 +444,28 @@ begin
   TextDifficulty := AddText(Theme.HighScores.TextDifficulty);
   TextContinue := AddText(Theme.HighScores.TextContinue);
   TextNavigate := AddText(Theme.HighScores.TextNavigate);
+
+  // row highlight bars first, so they are drawn behind the row
+  SetLength(EntryHighlightStatic, Theme.HighScores.List.MaxEntries);
+  for I := 0 to Theme.HighScores.List.MaxEntries - 1 do
+  begin
+    EntryHighlightStatic[I] := AddStatic(HIGHLIGHT_X, 0, HIGHLIGHT_W, 40, 1, 1, 1,
+      Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED);
+    Statics[EntryHighlightStatic[I]].Visible := false;
+  end;
+
+  // "New highscore!" box centered between the header and the list
+  Col := ColorExists('ColorLight');
+  if (Col >= 0) then
+    StaticNewHighscore := AddStatic(250, 124, 300, 44, Color[Col].RGB.R, Color[Col].RGB.G, Color[Col].RGB.B,
+      Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED)
+  else
+    StaticNewHighscore := AddStatic(250, 124, 300, 44, 0.2, 0.6, 0.9,
+      Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED);
+  TextNewHighscore := AddText(400, 128, 0, 0, 0, 0, 30, 1, 1, 1, 1,
+    Language.Translate('SING_HIGH_SCORES_NEW'), false, 0, 0, false);
+  Statics[StaticNewHighscore].Visible := false;
+  Text[TextNewHighscore].Visible := false;
 
   for I := 0 to Theme.HighScores.List.MaxEntries - 1 do
   begin
@@ -441,15 +500,78 @@ begin
 
   Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
+  FindOwnEntries;
+
   if Length(CurrentSong.Score[Player[0].Level]) = 0 then
-    FadeTo(NextScreen); //if there are no scores to show, go to next screen
+    FadeTo(NextScreen) //if there are no scores to show, go to next screen
+  else
+    PlayNewHighscoreSound;
 
   ShowScoresForDifficulty(Player[0].Level);
 end;
 
+{ finds the entries of the players of the song just sung (name and score,
+  difficulty of player 1) and their color: the team color in the party
+  mode, otherwise the player color }
+procedure TScreenHighScores.FindOwnEntries;
+var
+  I, J, Level: integer;
+  Name: UTF8String;
+  Taken: boolean;
+begin
+  SetLength(OwnEntry, PlayersPlay);
+  SetLength(OwnColor, PlayersPlay);
+  Level := Player[0].Level;
+  for I := 0 to PlayersPlay - 1 do
+  begin
+    OwnEntry[I] := -1;
+    // the same color as the score boxes while singing
+    OwnColor[I] := GetPlayerColor(Ini.SingColor[I]);
+    if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+      Name := Party.GetScoreName(I)
+    else
+      Name := Player[I].Name;
+    if (Player[I].ScoreTotalInt <= 0) then
+      Continue;
+    for J := 0 to High(CurrentSong.Score[Level]) do
+      if (CurrentSong.Score[Level, J].Score = Player[I].ScoreTotalInt) and
+         (CurrentSong.Score[Level, J].Name = Name) then
+      begin
+        // two players with the same name and score: use the next entry
+        Taken := false;
+        if (I > 0) then
+          Taken := (OwnEntry[I - 1] = J);
+        if not Taken then
+        begin
+          OwnEntry[I] := J;
+          Break;
+        end;
+      end;
+  end;
+end;
+
+{ plays the optional sound 'score highscore.mp3' if a player of this song
+  is now number one of the highscore list (silent if the file is missing) }
+{ new number one of the list: applause and the box "New highscore!" }
+procedure TScreenHighScores.PlayNewHighscoreSound;
+var
+  I: integer;
+  IsNew: boolean;
+begin
+  IsNew := false;
+  for I := 0 to High(OwnEntry) do
+    if (OwnEntry[I] = 0) then
+      IsNew := true;
+
+  Statics[StaticNewHighscore].Visible := IsNew;
+  Text[TextNewHighscore].Visible := IsNew;
+  if IsNew then
+    AudioPlayback.PlaySound(SoundLib.Applause);
+end;
+
 procedure TScreenHighScores.ShowScoresForDifficulty(difficulty: integer);
 var
-  I:    integer;
+  I, P: integer;
   Track: integer;
 begin
   LayoutEntryCount := EnsureRange(Length(CurrentSong.Score[difficulty]), 5, EntryCount);
@@ -470,6 +592,19 @@ begin
     end
     else
       SetEntryVisible(I, false);
+
+    // entries of the song just sung: bar in the team or player color
+    Statics[EntryHighlightStatic[I]].Visible := false;
+    if (difficulty = Player[0].Level) and Statics[EntryNumberStatic[I]].Visible then
+      for P := 0 to High(OwnEntry) do
+        if (OwnEntry[P] = I) then
+        begin
+          Statics[EntryHighlightStatic[I]].Texture.ColR := OwnColor[P].R;
+          Statics[EntryHighlightStatic[I]].Texture.ColG := OwnColor[P].G;
+          Statics[EntryHighlightStatic[I]].Texture.ColB := OwnColor[P].B;
+          Statics[EntryHighlightStatic[I]].Texture.Alpha := 0.8;
+          Statics[EntryHighlightStatic[I]].Visible := true;
+        end;
   end;
 
   Text[TextDifficulty].Text := IDifficultyTranslated[difficulty];

@@ -643,6 +643,8 @@ type
       ScoreNotes:     TAudioPlaybackStream; // 'score notes.mp3'
       ScoreLineBonus: TAudioPlaybackStream; // 'score linebonus.mp3'
       ScoreGolden:    TAudioPlaybackStream; // 'score golden.mp3'
+      PartyFanfare:   TAudioPlaybackStream; // 'party fanfare.mp3' (party winner)
+      ScoreHighscore: TAudioPlaybackStream; // 'score highscore.mp3' (new #1 highscore)
 
       constructor Create();
       destructor Destroy(); override;
@@ -1144,6 +1146,10 @@ begin
     ScoreLineBonus := AudioPlayback.OpenSound(SoundPath.Append('score linebonus.mp3'));
   if SoundPath.Append('score golden.mp3').IsFile then
     ScoreGolden := AudioPlayback.OpenSound(SoundPath.Append('score golden.mp3'));
+  if SoundPath.Append('party fanfare.mp3').IsFile then
+    PartyFanfare := AudioPlayback.OpenSound(SoundPath.Append('party fanfare.mp3'));
+  if SoundPath.Append('score highscore.mp3').IsFile then
+    ScoreHighscore := AudioPlayback.OpenSound(SoundPath.Append('score highscore.mp3'));
 
   BGMusic := AudioPlayback.OpenSound(SoundPath.Append('background track.mp3'));
 
@@ -1170,6 +1176,8 @@ begin
   FreeAndNil(ScoreNotes);
   FreeAndNil(ScoreLineBonus);
   FreeAndNil(ScoreGolden);
+  FreeAndNil(PartyFanfare);
+  FreeAndNil(ScoreHighscore);
 end;
 
 procedure TSoundLibrary.ApplySfxVolume(Volume: single);
@@ -1201,6 +1209,10 @@ begin
     ScoreLineBonus.Volume := Volume;
   if ScoreGolden <> nil then
     ScoreGolden.Volume := Volume;
+  if PartyFanfare <> nil then
+    PartyFanfare.Volume := Volume;
+  if ScoreHighscore <> nil then
+    ScoreHighscore.Volume := Volume;
 end;
 
 (* TODO

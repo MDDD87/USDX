@@ -61,9 +61,32 @@ type
       StaticTeam3Deco:   cardinal;
       TextWinner:        cardinal;
 
+      // "x of y rounds won" below each team
+      TextRoundsTeam:    array[0..2] of cardinal;
+      // index of the subtitle and legend text, -1 if not found
+      SubtitleText:      integer;
+      LegendText:        integer;
+
+      // page 2 "best performances": one box per category (PARTY_BEST_*)
+      Page:              integer;
+      HasBest:           boolean;
+      StaticBest:        array[0..3] of cardinal;
+      TextBestCategory:  array[0..3] of cardinal;
+      TextBestName:      array[0..3] of cardinal;
+      TextBestInfo:      array[0..3] of cardinal;
+
+      // fanfare, then applause
+      ShowTime:          cardinal;
+      ApplausePlayed:    boolean;
+
       constructor Create; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
+      function Draw: boolean; override;
+      procedure ShowBestPage;
+      procedure SetBestVisible(Show: boolean);
+      procedure ArrangeBestBoxes;
+      procedure MoveBestBox(Index: integer; X, Y: real);
   end;
 
 const
@@ -74,6 +97,9 @@ implementation
 uses
   UGraphic,
   UHelp,
+  UPath,
+  URenderer,
+  USkins,
   ULanguage,
   ULog,
   UMain,
@@ -100,8 +126,17 @@ begin
       SDLK_BACKSPACE,
       SDLK_RETURN:
         begin
-          AudioPlayback.PlaySound(SoundLib.Start);
-          FadeTo(@ScreenMain);
+          // first page 2 with the best performances, then the main menu
+          if (Page = 1) and HasBest then
+          begin
+            AudioPlayback.PlaySound(SoundLib.Change);
+            ShowBestPage;
+          end
+          else
+          begin
+            AudioPlayback.PlaySound(SoundLib.Start);
+            FadeTo(@ScreenMain);
+          end;
         end;
       SDLK_TAB:
         begin
@@ -111,7 +146,16 @@ begin
   end;
 end;
 
+const
+  // page 2 layout (2 x 2 boxes below the banner)
+  BEST_X: array[0..1] of real = (50, 410);
+  BEST_Y: array[0..1] of real = (184, 344);
+  BEST_W = 340;
+  BEST_H = 140;
+
 constructor TScreenPartyWin.Create;
+var
+  I: integer;
 begin
   inherited Create;
 
@@ -135,12 +179,156 @@ begin
   TextWinner := AddText (Theme.PartyWin.TextWinner);
 
   LoadFromTheme(Theme.PartyWin);
+
+  // "x of y rounds won" below the bar of each team (left aligned with the name)
+  TextRoundsTeam[0] := AddText(Theme.PartyWin.TextNameTeam1.X, Theme.PartyWin.StaticTeam1BG.Y + Theme.PartyWin.StaticTeam1BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam1.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundsTeam[1] := AddText(Theme.PartyWin.TextNameTeam2.X, Theme.PartyWin.StaticTeam2BG.Y + Theme.PartyWin.StaticTeam2BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam2.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundsTeam[2] := AddText(Theme.PartyWin.TextNameTeam3.X, Theme.PartyWin.StaticTeam3BG.Y + Theme.PartyWin.StaticTeam3BG.H + 2,
+    0, 0, Theme.PartyWin.TextNameTeam3.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+
+  // page 2: four boxes (2 x 2) below the banner, colored in the team color
+  // of the person in OnShow; white texts
+  for I := 0 to 3 do
+  begin
+    StaticBest[I] := AddStatic(BEST_X[I mod 2], BEST_Y[I div 2], BEST_W, BEST_H, 1, 1, 1,
+      Skin.GetTextureFileName('PartyPlayerButton'), TEXTURE_TYPE_TRANSPARENT);
+    TextBestCategory[I] := AddText(BEST_X[I mod 2] + 18, BEST_Y[I div 2] + 10, 0, 0,
+      Theme.PartyWin.TextNameTeam1.Font, 0, 22, 1, 1, 1, 0, '', false, 0, 0, false);
+    TextBestName[I] := AddText(BEST_X[I mod 2] + 18, BEST_Y[I div 2] + 40, 0, 0,
+      Theme.PartyWin.TextNameTeam1.Font, 0, 44, 1, 1, 1, 0, '', false, 0, 0, false);
+    TextBestInfo[I] := AddText(BEST_X[I mod 2] + 18, BEST_Y[I div 2] + 100, 0, 0,
+      Theme.PartyWin.TextNameTeam1.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  end;
+
+  // the subtitle from the theme is replaced by "Final score after X rounds";
+  // the legend says "continue" while page 2 follows
+  SubtitleText := -1;
+  LegendText := -1;
+  for I := 0 to High(Text) do
+  begin
+    if (Text[I].Text = Language.Translate('PARTY_WIN_DESC')) then
+      SubtitleText := I;
+    if (Text[I].Text = Language.Translate('PARTY_WIN_LEGEND_CONTINUE')) then
+      LegendText := I;
+  end;
+end;
+
+{ page 2: hides the teams and shows the best performances of the party }
+procedure TScreenPartyWin.ShowBestPage;
+begin
+  Page := 2;
+
+  Text[TextScoreTeam1].Visible := false;
+  Text[TextScoreTeam2].Visible := false;
+  Text[TextScoreTeam3].Visible := false;
+  Text[TextNameTeam1].Visible := false;
+  Text[TextNameTeam2].Visible := false;
+  Text[TextNameTeam3].Visible := false;
+  Statics[StaticTeam1].Visible := false;
+  Statics[StaticTeam1BG].Visible := false;
+  Statics[StaticTeam1Deco].Visible := false;
+  Statics[StaticTeam2].Visible := false;
+  Statics[StaticTeam2BG].Visible := false;
+  Statics[StaticTeam2Deco].Visible := false;
+  Statics[StaticTeam3].Visible := false;
+  Statics[StaticTeam3BG].Visible := false;
+  Statics[StaticTeam3Deco].Visible := false;
+  Text[TextRoundsTeam[0]].Visible := false;
+  Text[TextRoundsTeam[1]].Visible := false;
+  Text[TextRoundsTeam[2]].Visible := false;
+
+  Text[TextWinner].Text := Language.Translate('PARTY_WIN_BEST_TITLE');
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Language.Translate('PARTY_WIN_BEST_SUBTITLE');
+  if (LegendText >= 0) then
+    Text[LegendText].Text := Language.Translate('PARTY_WIN_LEGEND_CONTINUE');
+
+  ArrangeBestBoxes;
+  SetBestVisible(true);
+end;
+
+{ places the boxes of the categories with a value one after another without
+  gaps: 4 -> 2 x 2, 3 -> two at the top and one centered below,
+  2 -> side by side, 1 -> centered }
+procedure TScreenPartyWin.ArrangeBestBoxes;
+var
+  I, Pos, Count: integer;
+  X, Y: real;
+begin
+  Count := 0;
+  for I := 0 to 3 do
+    if (Party.Best[I].Score > 0) then
+      Inc(Count);
+
+  Pos := 0;
+  for I := 0 to 3 do
+    if (Party.Best[I].Score > 0) then
+    begin
+      Y := BEST_Y[Pos div 2];
+      // centered: the only box, or the last box of an odd number
+      if (Count = 1) or ((Count = 3) and (Pos = 2)) then
+        X := (BEST_X[0] + BEST_X[1]) / 2
+      else
+        X := BEST_X[Pos mod 2];
+      // with up to two boxes they stand in the middle of the free space
+      if (Count <= 2) then
+        Y := (BEST_Y[0] + BEST_Y[1]) / 2;
+      MoveBestBox(I, X, Y);
+      Inc(Pos);
+    end;
+end;
+
+procedure TScreenPartyWin.MoveBestBox(Index: integer; X, Y: real);
+begin
+  Statics[StaticBest[Index]].Texture.X := X;
+  Statics[StaticBest[Index]].Texture.Y := Y;
+  Text[TextBestCategory[Index]].X := X + 18;
+  Text[TextBestCategory[Index]].Y := Y + 10;
+  Text[TextBestName[Index]].X := X + 18;
+  Text[TextBestName[Index]].Y := Y + 40;
+  Text[TextBestInfo[Index]].X := X + 18;
+  Text[TextBestInfo[Index]].Y := Y + 100;
+end;
+
+const
+  PARTY_WIN_APPLAUSE_DELAY = 1300; // ms: applause after the fanfare
+
+{ boxes of page 2 are shown only for categories with a value }
+procedure TScreenPartyWin.SetBestVisible(Show: boolean);
+var
+  I: integer;
+  V: boolean;
+begin
+  for I := 0 to 3 do
+  begin
+    V := Show and (Party.Best[I].Score > 0);
+    Statics[StaticBest[I]].Visible := V;
+    Text[TextBestCategory[I]].Visible := V;
+    Text[TextBestName[I]].Visible := V;
+    Text[TextBestInfo[I]].Visible := V;
+  end;
+end;
+
+function TScreenPartyWin.Draw: boolean;
+begin
+  if not ApplausePlayed and (SDL_GetTicks() - ShowTime >= PARTY_WIN_APPLAUSE_DELAY) then
+  begin
+    ApplausePlayed := true;
+    AudioPlayback.PlaySound(SoundLib.Applause);
+  end;
+  Result := inherited Draw;
 end;
 
 procedure TScreenPartyWin.OnShow;
+const
+  BEST_KEYS: array[0..3] of string = ('PARTY_WIN_BEST_TOTAL', 'PARTY_WIN_BEST_NOTES',
+    'PARTY_WIN_BEST_GOLDEN', 'PARTY_WIN_BEST_LINE');
 var
- I: integer;
+ I, J: integer;
  Ranking: AParty_TeamRanking;
+ WinnerCount: integer;
 
   Function GetTeamColor(Team: integer): cardinal;
   var
@@ -161,8 +349,70 @@ begin
   // Ranking is sorted by score
   Ranking := Party.GetTeamRanking;
 
-  //Set Winnertext
-  Text[TextWinner].Text := Format(Language.Translate('PARTY_SCORE_WINS'), [Party.GetWinnerString(-1)]);
+  //Set Winnertext: "<team> wins the party!" or "Draw: <teams>"
+  WinnerCount := 0;
+  for I := 0 to High(Ranking) do
+    if (Ranking[I].Rank = PR_First) then
+      Inc(WinnerCount);
+  if (WinnerCount > 1) then
+    Text[TextWinner].Text := Format(Language.Translate('PARTY_WIN_DRAW'), [Party.GetWinnerString(-1)])
+  else
+    Text[TextWinner].Text := Format(Language.Translate('PARTY_WIN_WINNER'), [Party.GetWinnerString(-1)]);
+
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Format(Language.Translate('PARTY_WIN_FINAL'), [Length(Party.Rounds)]);
+
+  // rounds won by each team (in the order of the ranking, like the bars)
+  for I := 0 to 2 do
+  begin
+    Text[TextRoundsTeam[I]].Visible := (I <= High(Ranking));
+    if (I <= High(Ranking)) then
+      Text[TextRoundsTeam[I]].Text := Format(Language.Translate('PARTY_WIN_ROUNDS'),
+        [Party.RoundsWon(Ranking[I].Team), Length(Party.Rounds)]);
+  end;
+
+  // page 2: best performances of the party (only complete songs count)
+  Page := 1;
+  HasBest := false;
+  for I := 0 to 3 do
+  begin
+    if (Party.Best[I].Score > 0) then
+      HasBest := true;
+    Text[TextBestCategory[I]].Text := Language.Translate(BEST_KEYS[I]);
+    Text[TextBestName[I]].Text := ShortenName(Party.Best[I].Name, 20);
+    Text[TextBestInfo[I]].Text := Format(Language.Translate('PARTY_WIN_BEST_INFO'),
+      [Party.Best[I].Score, ShortenName(Party.Best[I].Song, 28)]);
+    // (no color lookup without a team: "P0Dark" does not exist and the
+    //  result -1 does not fit into the cardinal of GetTeamColor)
+    J := -1;
+    if (Party.Best[I].Team >= 0) then
+      J := ColorExists('P' + IntToStr(Party.Best[I].Team + 1) + 'Dark');
+    if (J >= 0) then
+    begin
+      Statics[StaticBest[I]].Texture.ColR := Color[J].RGB.R;
+      Statics[StaticBest[I]].Texture.ColG := Color[J].RGB.G;
+      Statics[StaticBest[I]].Texture.ColB := Color[J].RGB.B;
+    end;
+  end;
+  SetBestVisible(false);
+  if (LegendText >= 0) then
+  begin
+    if HasBest then
+      Text[LegendText].Text := Language.Translate('PARTY_WIN_LEGEND_NEXT')
+    else
+      Text[LegendText].Text := Language.Translate('PARTY_WIN_LEGEND_CONTINUE');
+  end;
+
+  // fanfare first, then applause (Draw)
+  ShowTime := SDL_GetTicks();
+  ApplausePlayed := false;
+  if (SoundLib.PartyFanfare <> nil) then
+    AudioPlayback.PlaySound(SoundLib.PartyFanfare)
+  else
+  begin
+    ApplausePlayed := true;
+    AudioPlayback.PlaySound(SoundLib.Applause);
+  end;
   if (Length(Party.Teams) >= 1) then
   begin
     Text[TextScoreTeam1].Text := IntToStr(Party.Teams[Ranking[0].Team].Score);
