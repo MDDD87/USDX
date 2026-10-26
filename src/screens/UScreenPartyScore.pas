@@ -65,6 +65,9 @@ type
 
       // "+1" etc. right of each team: party points of this round
       TextRoundPoints:   array[0..2] of cardinal;
+      // score of each team in this round below its bar (e.g. "Anna: 6540
+      // points", in duet rounds the team result)
+      TextRoundScore:    array[0..2] of cardinal;
       // index of the subtitle text ("Points of the last round"), -1 if not found
       SubtitleText:      integer;
 
@@ -99,6 +102,7 @@ uses
   ULanguage,
   ULog,
   UMain,
+  UNote,
   UParty,
   USkins,
   USong,
@@ -219,6 +223,13 @@ begin
     Theme.PartyScore.TextScoreTeam3.Font, Theme.PartyScore.TextScoreTeam3.Style, Theme.PartyScore.TextScoreTeam3.Size,
     1, 0.85, 0.3, 0, '', false, 0, 0, false);
 
+  TextRoundScore[0] := AddText(Theme.PartyScore.TextNameTeam1.X, Theme.PartyScore.StaticTeam1BG.Y + Theme.PartyScore.StaticTeam1BG.H + 2,
+    0, 0, Theme.PartyScore.TextNameTeam1.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundScore[1] := AddText(Theme.PartyScore.TextNameTeam2.X, Theme.PartyScore.StaticTeam2BG.Y + Theme.PartyScore.StaticTeam2BG.H + 2,
+    0, 0, Theme.PartyScore.TextNameTeam2.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+  TextRoundScore[2] := AddText(Theme.PartyScore.TextNameTeam3.X, Theme.PartyScore.StaticTeam3BG.Y + Theme.PartyScore.StaticTeam3BG.H + 2,
+    0, 0, Theme.PartyScore.TextNameTeam3.Font, 0, 20, 1, 1, 1, 0, '', false, 0, 0, false);
+
   // the subtitle from the theme is replaced by "Round X of Y: <round type>"
   SubtitleText := -1;
   for I := 0 to High(Text) do
@@ -303,6 +314,26 @@ begin
   // "Round X of Y: <round type>" instead of "Points of the last round."
   if (SubtitleText >= 0) then
     Text[SubtitleText].Text := Party.RoundCaption(Party.CurrentRound);
+
+  // the score of each team in this round, so the ranking is clear
+  for I := 0 to 2 do
+  begin
+    Text[TextRoundScore[I]].Visible := false;
+    if (I > High(Party.Teams)) then
+      Continue;
+    if Party.IsDuetRound and (I <= High(Party.DuetTeamScore)) then
+    begin
+      Text[TextRoundScore[I]].Text := Format(Language.Translate('PARTY_SCORE_DUET_RESULT'),
+        [Party.DuetTeamScore[I]]);
+      Text[TextRoundScore[I]].Visible := true;
+    end
+    else if (Length(Player) = Length(Party.Teams)) then
+    begin
+      Text[TextRoundScore[I]].Text := Format(Language.Translate('PARTY_SCORE_RESULT'),
+        [Party.GetScoreName(I), Player[I].ScoreTotalInt]);
+      Text[TextRoundScore[I]].Visible := true;
+    end;
+  end;
 
   // the points of this round are added by Party.NextRound (GenScores) after
   // this screen; show the new total and the points of this round now
