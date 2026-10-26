@@ -454,15 +454,15 @@ begin
     Statics[EntryHighlightStatic[I]].Visible := false;
   end;
 
-  // "New highscore!" box at the top right, in the light theme color
+  // "New highscore!" box centered between the header and the list
   Col := ColorExists('ColorLight');
   if (Col >= 0) then
-    StaticNewHighscore := AddStatic(470, 66, 300, 46, Color[Col].RGB.R, Color[Col].RGB.G, Color[Col].RGB.B,
+    StaticNewHighscore := AddStatic(250, 124, 300, 44, Color[Col].RGB.R, Color[Col].RGB.G, Color[Col].RGB.B,
       Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED)
   else
-    StaticNewHighscore := AddStatic(470, 66, 300, 46, 0.2, 0.6, 0.9,
+    StaticNewHighscore := AddStatic(250, 124, 300, 44, 0.2, 0.6, 0.9,
       Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED);
-  TextNewHighscore := AddText(620, 70, 0, 0, 0, 0, 32, 1, 1, 1, 1,
+  TextNewHighscore := AddText(400, 128, 0, 0, 0, 0, 30, 1, 1, 1, 1,
     Language.Translate('SING_HIGH_SCORES_NEW'), false, 0, 0, false);
   Statics[StaticNewHighscore].Visible := false;
   Text[TextNewHighscore].Visible := false;
@@ -525,7 +525,8 @@ begin
   for I := 0 to PlayersPlay - 1 do
   begin
     OwnEntry[I] := -1;
-    OwnColor[I] := GetPlayerColor(Ini.PlayerColor[I]);
+    // the same color as the score boxes while singing
+    OwnColor[I] := GetPlayerColor(Ini.SingColor[I]);
     if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
       Name := Party.GetScoreName(I)
     else
@@ -601,6 +602,7 @@ begin
           Statics[EntryHighlightStatic[I]].Texture.ColR := OwnColor[P].R;
           Statics[EntryHighlightStatic[I]].Texture.ColG := OwnColor[P].G;
           Statics[EntryHighlightStatic[I]].Texture.ColB := OwnColor[P].B;
+          Statics[EntryHighlightStatic[I]].Texture.Alpha := 0.8;
           Statics[EntryHighlightStatic[I]].Visible := true;
         end;
   end;
