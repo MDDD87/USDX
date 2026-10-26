@@ -85,6 +85,8 @@ type
       function Draw: boolean; override;
       procedure ShowBestPage;
       procedure SetBestVisible(Show: boolean);
+      procedure ArrangeBestBoxes;
+      procedure MoveBestBox(Index: integer; X, Y: real);
   end;
 
 const
@@ -238,10 +240,56 @@ begin
   Text[TextRoundsTeam[2]].Visible := false;
 
   Text[TextWinner].Text := Language.Translate('PARTY_WIN_BEST_TITLE');
+  if (SubtitleText >= 0) then
+    Text[SubtitleText].Text := Language.Translate('PARTY_WIN_BEST_SUBTITLE');
   if (LegendText >= 0) then
     Text[LegendText].Text := Language.Translate('PARTY_WIN_LEGEND_CONTINUE');
 
+  ArrangeBestBoxes;
   SetBestVisible(true);
+end;
+
+{ places the boxes of the categories with a value one after another without
+  gaps: 4 -> 2 x 2, 3 -> two at the top and one centered below,
+  2 -> side by side, 1 -> centered }
+procedure TScreenPartyWin.ArrangeBestBoxes;
+var
+  I, Pos, Count: integer;
+  X, Y: real;
+begin
+  Count := 0;
+  for I := 0 to 3 do
+    if (Party.Best[I].Score > 0) then
+      Inc(Count);
+
+  Pos := 0;
+  for I := 0 to 3 do
+    if (Party.Best[I].Score > 0) then
+    begin
+      Y := BEST_Y[Pos div 2];
+      // centered: the only box, or the last box of an odd number
+      if (Count = 1) or ((Count = 3) and (Pos = 2)) then
+        X := (BEST_X[0] + BEST_X[1]) / 2
+      else
+        X := BEST_X[Pos mod 2];
+      // with up to two boxes they stand in the middle of the free space
+      if (Count <= 2) then
+        Y := (BEST_Y[0] + BEST_Y[1]) / 2;
+      MoveBestBox(I, X, Y);
+      Inc(Pos);
+    end;
+end;
+
+procedure TScreenPartyWin.MoveBestBox(Index: integer; X, Y: real);
+begin
+  Statics[StaticBest[Index]].Texture.X := X;
+  Statics[StaticBest[Index]].Texture.Y := Y;
+  Text[TextBestCategory[Index]].X := X + 18;
+  Text[TextBestCategory[Index]].Y := Y + 10;
+  Text[TextBestName[Index]].X := X + 18;
+  Text[TextBestName[Index]].Y := Y + 40;
+  Text[TextBestInfo[Index]].X := X + 18;
+  Text[TextBestInfo[Index]].Y := Y + 100;
 end;
 
 const

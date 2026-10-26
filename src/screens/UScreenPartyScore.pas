@@ -238,7 +238,7 @@ begin
 end;
 
 const
-  PARTY_SCORE_COUNT_DELAY = 1500; // ms after the screen appears
+  PARTY_SCORE_COUNT_DELAY = 2500; // ms after the screen appears (after the applause)
 
 { the points of this round are added by Party.NextRound (GenScores) after this
   screen. First the old total and "+1" are shown, then the new total. }
@@ -436,6 +436,8 @@ begin
 
   ShowTime := SDL_GetTicks();
   PointsCounted := false;
+  // applause for the winner first, the points are added afterwards (Draw)
+  AudioPlayback.PlaySound(SoundLib.Applause);
 
   // the score and highscore screens play the sung song (Feature 1b);
   // stop it, the party score screen only plays the background music
