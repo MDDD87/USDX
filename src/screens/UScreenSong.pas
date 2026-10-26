@@ -2289,8 +2289,10 @@ begin
 
     HideDuetElements;
 
-    // Duet Singers
-    if (CatSongs.Song[Interaction].isDuet) then
+    // Duet Singers (not in the party: there the place is used by the jokers;
+    // a party duet round names the voices in the announcement before singing)
+    if (CatSongs.Song[Interaction].isDuet) and
+       not (Mode in [smPartyClassic, smPartyFree, smPartyTournament]) then
     begin
       if (PlayersPlay = 3) or (PlayersPlay = 6) then
       begin

@@ -1067,19 +1067,34 @@ procedure TScreenSingView.PreparePartyTeamNumbers();
     Inc(PartyNumberCount);
   end;
 
+var
+  N: integer;
 begin
   PartyNumberCount := 0;
   if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
     Exit;
 
   // with 2 or 3 teams the second screen shows the textures of screen 1
+  // duet round (Feature 4): the names of the two singers of the team (the
+  // names are otherwise set once when the screen is created). The boxes
+  // show the mic numbers 1 (blue) and 2 (red).
   if (PlayersPlay = 2) and Party.IsDuetRound then
   begin
-    // duet round: both singers belong to the team that sings
-    AddBox(StaticP1TwoPAvatar[0], Party.DuetTeam + 1);
-    AddBox(StaticP2RAvatar[0], Party.DuetTeam + 1);
+    ScreenSing.PlayerNames[1] := ShortenName(Party.GetSingerName(0), PARTY_TEAMNAME_MAXLEN);
+    ScreenSing.PlayerNames[2] := ShortenName(Party.GetSingerName(1), PARTY_TEAMNAME_MAXLEN);
+    ScreenSing.PlayerDuetNames[1] := ScreenSing.PlayerNames[1];
+    ScreenSing.PlayerDuetNames[2] := ScreenSing.PlayerNames[2];
   end
-  else if (PlayersPlay = 2) then
+  else
+    // other rounds: the team names again (after a duet round)
+    for N := 1 to PlayersPlay do
+      if (N - 1 <= High(Party.Teams)) and (Party.Teams[N-1].Name <> '') then
+      begin
+        ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
+        ScreenSing.PlayerDuetNames[N] := ScreenSing.PlayerNames[N];
+      end;
+
+  if (PlayersPlay = 2) then
   begin
     AddBox(StaticP1TwoPAvatar[0], 1);
     AddBox(StaticP2RAvatar[0], 2);

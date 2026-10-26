@@ -775,6 +775,13 @@ begin
   begin
     ColP1 := GetPlayerColor(Ini.PlayerColor[0]);
     ColP2 := GetPlayerColor(Ini.PlayerColor[1]);
+    // party duet round: the lyrics in the colors of the notes (mic 1 blue,
+    // mic 2 red); the party sets the note colors via SingColor
+    if PartyDuetRound then
+    begin
+      ColP1 := GetPlayerColor(Ini.SingColor[0]);
+      ColP2 := GetPlayerColor(Ini.SingColor[1]);
+    end;
 
     LyricsDuetP1.FontFamily := Ini.LyricsFont;
     LyricsDuetP2.FontFamily := Ini.LyricsFont;

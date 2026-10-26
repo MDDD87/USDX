@@ -448,7 +448,7 @@ const
   DUET_NAME_MAXLEN = 9;
 var
   T, Team: integer;
-  SongName: UTF8String;
+  Voice1, Voice2: UTF8String;
   NameText: array[0..2] of cardinal;
 begin
   NameText[0] := TextNextPlayer1;
@@ -460,11 +460,21 @@ begin
     // announcement: the team that sings next; box 1 (blue) = mic 1 = P1,
     // box 2 (red) = mic 2 = P2
     Team := Party.DuetNextTeam;
-    SongName := '';
-    if (Party.DuetSong >= 0) and (Party.DuetSong <= High(CatSongs.Song)) then
-      SongName := CatSongs.Song[Party.DuetSong].Title;
+    // the voices by the names in the song file (e.g. "Beyoncé"), else P1/P2
+    Voice1 := 'P1';
+    Voice2 := 'P2';
+    if (Party.DuetSong >= 0) and (Party.DuetSong <= High(CatSongs.Song)) and
+       (Length(CatSongs.Song[Party.DuetSong].DuetNames) >= 2) then
+    begin
+      if (Trim(CatSongs.Song[Party.DuetSong].DuetNames[0]) <> '') then
+        Voice1 := Trim(CatSongs.Song[Party.DuetSong].DuetNames[0]);
+      if (Trim(CatSongs.Song[Party.DuetSong].DuetNames[1]) <> '') then
+        Voice2 := Trim(CatSongs.Song[Party.DuetSong].DuetNames[1]);
+    end;
     Text[TextNextRound].Text := Format(Language.Translate('PARTY_DUET_TURN'),
-      [UTF8String(Party.Teams[Team].Name), SongName]);
+      [UTF8String(Party.Teams[Team].Name),
+       Party.DuetSingerName(Team, 0), Voice1,
+       Party.DuetSingerName(Team, 1), Voice2]);
 
     Text[NameText[0]].Text := Party.DuetSingerName(Team, 0);
     Text[NameText[1]].Text := Party.DuetSingerName(Team, 1);
