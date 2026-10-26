@@ -123,6 +123,11 @@ uses
   USong,
   UUnicodeUtils;
 
+const
+  // row highlight bar (from the number box to the date)
+  HIGHLIGHT_X = 92;
+  HIGHLIGHT_W = 696;
+
 function TrackNumber(TrackMask: integer): integer;
 begin
   if (TrackMask <= 0) or ((TrackMask and (TrackMask - 1)) <> 0) then
@@ -415,11 +420,6 @@ begin
     //left-click anywhere sends return
     ParseInput(SDLK_RETURN, 0, true);
 end;
-
-const
-  // row highlight bar (from the number box to the date)
-  HIGHLIGHT_X = 92;
-  HIGHLIGHT_W = 696;
 
 constructor TScreenHighScores.Create;
 var
