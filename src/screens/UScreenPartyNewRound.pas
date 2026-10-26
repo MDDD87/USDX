@@ -91,6 +91,10 @@ type
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
       procedure Refresh;
+      { duet round (Feature 4): overview of all pairs or announcement of
+        the team that sings next (after the song was chosen) }
+      function DuetAnnouncement: boolean;
+      procedure ShowDuet;
   end;
 
 const
@@ -102,6 +106,7 @@ uses
   UGraphic,
   UHelp,
   UIni,
+  USongs,
   ULanguage,
   ULog,
   UMain,
@@ -140,7 +145,15 @@ begin
       SDLK_RETURN:
         begin
           AudioPlayback.PlaySound(SoundLib.Start);
-          Party.CallBeforeSongSelect;
+          if DuetAnnouncement then
+          begin
+            // next team sings the chosen duet song
+            Party.StartDuetPass;
+            CatSongs.Selected := Party.DuetSong;
+            FadeTo(@ScreenSing);
+          end
+          else
+            Party.CallBeforeSongSelect;
         end;
 
       SDLK_UP:
@@ -411,6 +424,72 @@ begin
   end
   else
     Text[TextNextPlayer3].Visible := false;
+
+  // normal size of the singer names (changed in duet rounds)
+  Text[TextNextPlayer1].Size := Theme.PartyNewRound.TextNextPlayer1.Size;
+  Text[TextNextPlayer2].Size := Theme.PartyNewRound.TextNextPlayer2.Size;
+  Text[TextNextPlayer3].Size := Theme.PartyNewRound.TextNextPlayer3.Size;
+  Text[TextNextPlayer1].Y := Theme.PartyNewRound.TextNextPlayer1.Y;
+  Text[TextNextPlayer2].Y := Theme.PartyNewRound.TextNextPlayer2.Y;
+  Text[TextNextPlayer3].Y := Theme.PartyNewRound.TextNextPlayer3.Y;
+
+  if Party.IsDuetRound then
+    ShowDuet;
+end;
+
+function TScreenPartyNewRound.DuetAnnouncement: boolean;
+begin
+  Result := Party.IsDuetRound and (Party.DuetSong >= 0) and Party.DuetPassesLeft;
+end;
+
+procedure TScreenPartyNewRound.ShowDuet;
+const
+  DUET_NAME_SIZE = 20;
+  DUET_NAME_MAXLEN = 9;
+var
+  T, Team: integer;
+  SongName: UTF8String;
+  NameText: array[0..2] of cardinal;
+begin
+  NameText[0] := TextNextPlayer1;
+  NameText[1] := TextNextPlayer2;
+  NameText[2] := TextNextPlayer3;
+
+  if DuetAnnouncement then
+  begin
+    // announcement: the team that sings next; box 1 (blue) = mic 1 = P1,
+    // box 2 (red) = mic 2 = P2
+    Team := Party.DuetNextTeam;
+    SongName := '';
+    if (Party.DuetSong >= 0) and (Party.DuetSong <= High(CatSongs.Song)) then
+      SongName := CatSongs.Song[Party.DuetSong].Title;
+    Text[TextNextRound].Text := Format(Language.Translate('PARTY_DUET_TURN'),
+      [UTF8String(Party.Teams[Team].Name), SongName]);
+
+    Text[NameText[0]].Text := Party.DuetSingerName(Team, 0);
+    Text[NameText[1]].Text := Party.DuetSingerName(Team, 1);
+    Text[NameText[0]].Visible := true;
+    Text[NameText[1]].Visible := true;
+    Text[NameText[2]].Visible := false;
+    Statics[StaticNextPlayer1].Visible := true;
+    Statics[StaticNextPlayer2].Visible := true;
+    Statics[StaticNextPlayer3].Visible := false;
+  end
+  else
+  begin
+    // overview: the pair of every team ("Anna & Toni") and which team starts
+    Text[TextNextRound].Text := Format(Language.Translate('PARTY_DUET_OVERVIEW'),
+      [UTF8String(Party.Teams[Party.DuetNextTeam].Name)]);
+    for T := 0 to High(Party.Teams) do
+      if (T <= 2) then
+      begin
+        Text[NameText[T]].Text := ShortenName(Party.DuetSingerName(T, 0), DUET_NAME_MAXLEN) +
+          ' & ' + ShortenName(Party.DuetSingerName(T, 1), DUET_NAME_MAXLEN);
+        Text[NameText[T]].Size := DUET_NAME_SIZE;
+        // smaller text: keep it in the middle of the box
+        Text[NameText[T]].Y := Text[NameText[T]].Y + 5;
+      end;
+  end;
 end;
 
 end.

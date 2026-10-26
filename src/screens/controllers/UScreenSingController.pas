@@ -85,6 +85,7 @@ type
     procedure CalculateStartTime;
     procedure SaveLocalScores;
     function PartyRoundSavesHighscores: boolean;
+    function PartyDuetRound: boolean;
     function GetHighscoreName(PlayerIndex: integer): UTF8String;
     procedure RecordPartyPerformances;
   public
@@ -1987,8 +1988,9 @@ begin
 
   // normal mode: only songs sung to the end; party mode: also songs that
   // were stopped early (same condition as in TScreenScore.LeaveScreen)
+  // party duet round: the voices are always saved (whatever DuetScores says)
   if (ScreenSing.SungToEnd or PartyRoundSavesHighscores) and
-     (not CurrentSong.isDuet or (Ini.DuetScores = 1)) then
+     (not CurrentSong.isDuet or (Ini.DuetScores = 1) or PartyDuetRound) then
   begin
     for I := 0 to PlayersPlay - 1 do
     begin
@@ -2006,6 +2008,20 @@ begin
         Sung := true;
       end;
     end;
+
+    // party duet round: additionally the team entry "A & B" with the
+    // average of both voices (marked as "both voices")
+    if PartyRoundSavesHighscores and PartyDuetRound and (PlayersPlay = 2) then
+    begin
+      Score := Round((Player[0].ScoreTotalInt + Player[1].ScoreTotalInt) / 2);
+      ScoreName := GetHighscoreName(0) + ' & ' + GetHighscoreName(1);
+      if (Score > 0) and (GetHighscoreName(0) <> '') and (GetHighscoreName(1) <> '') then
+      begin
+        DataBase.AddScore(CurrentSong, Player[0].Level, Length(CurrentSong.Tracks),
+          PARTY_DUET_SCORE_TRACKMASK, ScoreName, Score);
+        Sung := true;
+      end;
+    end;
   end;
 
   if Sung then
@@ -2019,6 +2035,12 @@ end;
 function TScreenSingController.PartyRoundSavesHighscores: boolean;
 begin
   Result := Party.bPartyGame and Party.RoundSavesHighscores;
+end;
+
+function TScreenSingController.PartyDuetRound: boolean;
+begin
+  Result := Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and
+    Party.IsDuetRound and CurrentSong.isDuet;
 end;
 
 { Name under which the score of Player[PlayerIndex] is saved.
@@ -2044,6 +2066,15 @@ var
   I: integer;
   Name, Song: UTF8String;
 begin
+  // duet round: store the result of this team (its voices and the average);
+  // duets do not count for the best performances
+  if PartyDuetRound then
+  begin
+    if (PlayersPlay >= 2) then
+      Party.RecordDuetPass(Player[0].ScoreTotalInt, Player[1].ScoreTotalInt);
+    Exit;
+  end;
+
   if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
      Party.IsTeamScoreRound or ScreenSong.PartyMedley or Party.IsAnyMedleyRound or
      not Party.RoundSavesHighscores then

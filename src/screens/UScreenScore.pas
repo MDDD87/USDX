@@ -129,6 +129,8 @@ type
       TextTitle:              integer;
 
       TextArtistTitle:        integer;
+      // party duet round: "<team> – team result: N points"
+      TextDuetResult:         integer;
 
       TextName:             array[1..UIni.IMaxPlayerCount] of integer;
       TextScore:            array[1..UIni.IMaxPlayerCount] of integer;
@@ -872,6 +874,9 @@ begin
   TextTitle       := AddText(Theme.Score.TextTitle);
 
   TextArtistTitle := AddText(Theme.Score.TextArtistTitle);
+  TextDuetResult := AddText(Theme.Score.TextArtistTitle.X, Theme.Score.TextArtistTitle.Y + 32, 0, 0,
+    Theme.Score.TextArtistTitle.Font, Theme.Score.TextArtistTitle.Style, 28, 1, 1, 1, 0, '', false, 0, 0, false);
+  Text[TextDuetResult].Visible := false;
 
   for Player := 1 to UIni.IMaxPlayerCount do
   begin
@@ -1417,6 +1422,13 @@ begin
         HideAvatarFrames(AvatarStaticRef[I]);
       end;
 
+  // party duet round: result of the team (average of both voices)
+  Text[TextDuetResult].Visible := IsPartyRound and Party.IsDuetRound and
+    (Party.DuetTeam >= 0) and (Party.DuetTeam <= High(Party.DuetTeamScore));
+  if Text[TextDuetResult].Visible then
+    Text[TextDuetResult].Text := Format(Language.Translate('PARTY_DUET_TEAMRESULT'),
+      [UTF8String(Party.Teams[Party.DuetTeam].Name), Party.DuetTeamScore[Party.DuetTeam]]);
+
   RefreshTexts;
 
   // SingStar style: the sung song is not played again on the score screen;
@@ -1643,10 +1655,11 @@ begin
     // same conditions as for saving (TScreenSingController.Finish/SaveLocalScores);
     // in party mode also songs that were stopped early are saved
     if Party.RoundSavesHighscores and
-       not (CurrentSong.isDuet and (Ini.DuetScores = 0)) then
+       (not (CurrentSong.isDuet and (Ini.DuetScores = 0)) or Party.IsDuetRound) then
       FadeTo(@ScreenHighScores)
     else
-      FadeTo(@ScreenPartyScore);
+      // duet round: the next team, otherwise the party score screen
+      FadeTo(Party.ScreenAfterRoundScores);
   end
   else if (CurrentSong.isDuet and (Ini.DuetScores = 0)) or (ScreenSong.RapToFreestyle) or (ScreenSong.Mode = smMedley) then
     FadeTo(@ScreenSong)

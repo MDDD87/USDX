@@ -99,6 +99,8 @@ type
       // party medley round (Feature 3): the medley engine is used while
       // Mode stays smPartyClassic/smPartyFree
       PartyMedley:  boolean;
+      // songs hidden for a party duet round (shown again afterwards)
+      DuetRoundHiddenSongs: array of integer;
       PartyMedleyFailedRound: integer; // round in which a medley could not be built
 
       //Video Icon Mod
@@ -320,6 +322,9 @@ type
       { party medley: true if song SongIndex belongs to the song pool that
         was chosen when the party was started (all songs, category, playlist) }
       function  InPartySongPool(SongIndex: integer): boolean;
+      { party: duet round -> only duet songs, other rounds -> no duet songs }
+      function  PartySongTypeAllowed(SongIndex: integer): boolean;
+      function  PartyDuetRound: boolean;
       { party medley: builds the medley playlist, FirstSong is the song that
         was selected on the song screen. Returns false if fewer than two
         suitable songs were found. }
@@ -1293,10 +1298,15 @@ begin
             else
             begin // clicked on song
 
-              // Duets Warning
-              if (CatSongs.Song[Interaction].isDuet) and (Mode <> smNormal) then
+              // Duets Warning (a party duet round needs a duet song)
+              if (CatSongs.Song[Interaction].isDuet) and (Mode <> smNormal) and not PartyDuetRound then
               begin
                 ScreenPopupError.ShowPopup(Language.Translate('SING_ERROR_DUET_MODE_PARTY'));
+                Exit;
+              end;
+              if PartyDuetRound and not CatSongs.Song[Interaction].isDuet then
+              begin
+                ScreenPopupError.ShowPopup(Language.Translate('PARTY_DUET_CHOOSE_DUET'));
                 Exit;
               end;
 
@@ -3905,7 +3915,7 @@ var
     Result := false;
     for K := 0 to High(CatSongs.Song) do
       if (CatSongs.Song[K].Visible or not OnlyVisible) and not CatSongs.Song[K].Main and
-         not CatSongs.Song[K].isDuet and not Party.SongAlreadySung(K) then
+         PartySongTypeAllowed(K) and not Party.SongAlreadySung(K) then
         Exit(true);
   end;
 
@@ -3916,7 +3926,7 @@ var
 
   function Selectable(SongIndex: integer): boolean;
   begin
-    Result := not CatSongs.Song[SongIndex].isDuet and
+    Result := PartySongTypeAllowed(SongIndex) and
               (AllowSung or not Party.SongAlreadySung(SongIndex));
   end;
 
@@ -3935,6 +3945,7 @@ begin
             repeat
               I2 := Low(CatSongs.Song) + Random(High(CatSongs.Song) + 1 - Low(CatSongs.Song));
             until (CatSongs.Song[I2].Main = false) and
+                  ((Mode <> smPartyClassic) or PartySongTypeAllowed(I2)) and
                   (AllowSung or not Party.SongAlreadySung(I2));
 
             // search cat
@@ -4104,7 +4115,7 @@ begin
     Count := 0;
     for I := ID + 1 to NextCat - 1 do
     begin
-      if not(CatSongs.Song[I].isDuet) then
+      if PartySongTypeAllowed(I) then
       begin
         Inc(Count);
         Break;
@@ -4202,11 +4213,39 @@ procedure TScreenSong.FilterDuetsInPartyMode;
 var
   I: integer;
 begin
+  // songs hidden for a previous duet round are shown again
+  for I := 0 to High(DuetRoundHiddenSongs) do
+    if (DuetRoundHiddenSongs[I] >= 0) and (DuetRoundHiddenSongs[I] <= High(CatSongs.Song)) then
+      CatSongs.Song[DuetRoundHiddenSongs[I]].Visible := true;
+  SetLength(DuetRoundHiddenSongs, 0);
+
   if (Mode in [smPartyClassic, smPartyFree, smPartyTournament]) then
   begin
-    for I := 0 to High(CatSongs.Song) do
-      if CatSongs.Song[I].isDuet then
-        CatSongs.Song[I].Visible := false;
+    if PartyDuetRound then
+    begin
+      // duet round (Feature 4): only duet songs of the party song pool
+      for I := 0 to High(CatSongs.Song) do
+        if not CatSongs.Song[I].Main then
+        begin
+          if not CatSongs.Song[I].isDuet then
+          begin
+            if CatSongs.Song[I].Visible then
+            begin
+              CatSongs.Song[I].Visible := false;
+              SetLength(DuetRoundHiddenSongs, Length(DuetRoundHiddenSongs) + 1);
+              DuetRoundHiddenSongs[High(DuetRoundHiddenSongs)] := I;
+            end;
+          end
+          else if (PlaylistMan.Mode = smAll) and (Ini.TabsAtStartup = 0) then
+            // all songs without tabs: the duets may still be hidden from
+            // an earlier round
+            CatSongs.Song[I].Visible := true;
+        end;
+    end
+    else
+      for I := 0 to High(CatSongs.Song) do
+        if CatSongs.Song[I].isDuet then
+          CatSongs.Song[I].Visible := false;
     // Reset visible-index cache so VisibleIndex() recomputes correctly
     CatSongs.ResetVisibleIndexCache;
   end;
@@ -4264,7 +4303,30 @@ begin
 
   StopMusicPreview();
 
+  // party duet round: the teams sing the song one after another; first the
+  // announcement of the first team (screen party new round)
+  if PartyDuetRound then
+  begin
+    DuetChange := false;
+    Party.DuetSong := Interaction;
+    FadeTo(@ScreenPartyNewRound);
+    Exit;
+  end;
+
   FadeTo(@ScreenSing);
+end;
+
+function TScreenSong.PartyDuetRound: boolean;
+begin
+  Result := (Mode in [smPartyClassic, smPartyFree]) and Party.bPartyGame and Party.IsDuetRound;
+end;
+
+function TScreenSong.PartySongTypeAllowed(SongIndex: integer): boolean;
+begin
+  Result := false;
+  if (SongIndex < 0) or (SongIndex > High(CatSongs.Song)) then
+    Exit;
+  Result := (CatSongs.Song[SongIndex].isDuet = PartyDuetRound);
 end;
 
 function TScreenSong.MedleyActive: boolean;

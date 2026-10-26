@@ -350,7 +350,8 @@ end;
 function TScreenHighScores.NextScreen: PMenu;
 begin
   if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
-    Result := @ScreenPartyScore
+    // duet round: announcement of the next team, otherwise party score
+    Result := Party.ScreenAfterRoundScores
   else
     Result := @ScreenSong;
 end;

@@ -570,6 +570,11 @@ begin
       end
       else
         ScreenSing.PlayerNames[I] := Ini.NameTeam[I-1];
+
+      // duet round (Feature 4): the two singers of one team -> their names
+      if (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and Party.IsDuetRound and
+         (Party.GetSingerName(I-1) <> '') then
+        ScreenSing.PlayerNames[I] := ShortenName(Party.GetSingerName(I-1), PARTY_TEAMNAME_MAXLEN);
     end
     else
     begin
@@ -1068,7 +1073,13 @@ begin
     Exit;
 
   // with 2 or 3 teams the second screen shows the textures of screen 1
-  if (PlayersPlay = 2) then
+  if (PlayersPlay = 2) and Party.IsDuetRound then
+  begin
+    // duet round: both singers belong to the team that sings
+    AddBox(StaticP1TwoPAvatar[0], Party.DuetTeam + 1);
+    AddBox(StaticP2RAvatar[0], Party.DuetTeam + 1);
+  end
+  else if (PlayersPlay = 2) then
   begin
     AddBox(StaticP1TwoPAvatar[0], 1);
     AddBox(StaticP2RAvatar[0], 2);
