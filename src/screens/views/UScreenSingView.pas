@@ -76,6 +76,9 @@ type
 
     // party mode: avatar boxes that show the team number (render coordinates)
     PartyNumberCount: integer;
+    // rounded white bar (tinted) for the Pass rounds, loaded on first use
+    PassBarTex: TTexture;
+    PassBarTexX2: real; // right texture coordinate of the whole bar
     PartyNumberBox: array [0..2] of record
       X, Y, W, H: real;
       Num: integer;
@@ -207,6 +210,8 @@ type
     // party mode: team number instead of the empty avatar picture
     procedure PreparePartyTeamNumbers();
     procedure DrawPartyTeamNumbers();
+    procedure DrawPassBars();
+    procedure DrawPassBar(X, Y, W, H, Part: real; R, G, B, Alpha: real);
     procedure DrawCountdown(timeDiff: real);
     function Draw: boolean;
 
@@ -570,6 +575,11 @@ begin
       end
       else
         ScreenSing.PlayerNames[I] := Ini.NameTeam[I-1];
+
+      // duet round (Feature 4): the two singers of one team -> their names
+      if (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and Party.IsDuetRound and
+         (Party.GetSingerName(I-1) <> '') then
+        ScreenSing.PlayerNames[I] := ShortenName(Party.GetSingerName(I-1), PARTY_TEAMNAME_MAXLEN);
     end
     else
     begin
@@ -944,6 +954,7 @@ begin
   // draw static menu (FG)
   ScreenSing.DrawFG;
   DrawPartyTeamNumbers;
+  DrawPassBars;
 
   //Medley Countdown
   if ScreenSong.MedleyActive then
@@ -1062,12 +1073,34 @@ procedure TScreenSingView.PreparePartyTeamNumbers();
     Inc(PartyNumberCount);
   end;
 
+var
+  N: integer;
 begin
   PartyNumberCount := 0;
   if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
     Exit;
 
   // with 2 or 3 teams the second screen shows the textures of screen 1
+  // duet round (Feature 4): the names of the two singers of the team (the
+  // names are otherwise set once when the screen is created). The boxes
+  // show the mic numbers 1 (blue) and 2 (red).
+  if (PlayersPlay = 2) and Party.IsDuetRound then
+  begin
+    ScreenSing.PlayerNames[1] := ShortenName(Party.GetSingerName(0), PARTY_TEAMNAME_MAXLEN);
+    ScreenSing.PlayerNames[2] := ShortenName(Party.GetSingerName(1), PARTY_TEAMNAME_MAXLEN);
+    ScreenSing.PlayerDuetNames[1] := ScreenSing.PlayerNames[1];
+    ScreenSing.PlayerDuetNames[2] := ScreenSing.PlayerNames[2];
+  end
+  else
+    // other rounds: the team names again (after a duet round); in the Pass
+    // rounds the singer is shown in the bar below (DrawPassBars)
+    for N := 1 to PlayersPlay do
+      if (N - 1 <= High(Party.Teams)) and (Party.Teams[N-1].Name <> '') then
+      begin
+        ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
+        ScreenSing.PlayerDuetNames[N] := ScreenSing.PlayerNames[N];
+      end;
+
   if (PlayersPlay = 2) then
   begin
     AddBox(StaticP1TwoPAvatar[0], 1);
@@ -1129,6 +1162,133 @@ begin
                PartyNumberBox[I].Y + (PartyNumberBox[I].H - FontSize) / 2);
     PrintText(NumText);
   end;
+end;
+
+{ Pass the Mic, Pass the Medley, Pass the Micro-Medley (like SingStar): below
+  the team number and name a bar in the team color with the member who sings.
+  Some seconds before the mic is passed on the bar fills up, and the text
+  changes between "NEXT: <name>" and the current singer. }
+procedure TScreenSingView.DrawPassBars();
+const
+  PASS_WARN_SECONDS = 8;    // the bar fills up during this time
+  PASS_BLINK_MS     = 1500; // change of the text
+  BAR_W = 180;
+  BAR_H = 24;
+var
+  I, Step, P, NextP: integer;
+  TimeToChange, Progress, FontSz: real;
+  Chars, C: integer;
+  Col: TRGB;
+  X, Y: real;
+  Txt: UTF8String;
+  Warn: boolean;
+begin
+  if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
+     not Party.IsAnyPassRound then
+    Exit;
+
+  // current step (number of changes so far) and time to the next change
+  Step := 0;
+  TimeToChange := -1;
+  if Party.IsPassMedleyRound then
+  begin
+    Step := PlaylistMedley.CurrentMedleySong - 1;
+    if (PlaylistMedley.CurrentMedleySong < PlaylistMedley.NumMedleySongs) then
+      TimeToChange := ScreenSing.MedleyEnd - AudioPlayback.Position;
+  end
+  else
+  begin
+    while (Step <= High(Party.PassChangeBeats)) and
+          (LyricsState.CurrentBeat >= Party.PassChangeBeats[Step]) do
+      Inc(Step);
+    if (Step <= High(Party.PassChangeBeats)) then
+      TimeToChange := GetTimeFromBeat(Party.PassChangeBeats[Step]) - LyricsState.GetCurrentTime();
+  end;
+
+  Warn := (TimeToChange >= 0) and (TimeToChange <= PASS_WARN_SECONDS);
+  if Warn then
+    Progress := 1 - TimeToChange / PASS_WARN_SECONDS
+  else
+    Progress := 0;
+
+  for I := 0 to PartyNumberCount - 1 do
+  begin
+    if (I > High(Party.Teams)) then
+      Break;
+    P := Party.PassMedleySinger(I, Step);
+    NextP := Party.PassMedleySinger(I, Step + 1);
+    if (P < 0) then
+      Continue;
+
+    X := PartyNumberBox[I].X;
+    // a little below the team name
+    Y := PartyNumberBox[I].Y + PartyNumberBox[I].H + 9;
+    Col := GetPlayerColor(Ini.SingColor[I]);
+
+    // rounded bar in the team color (like the tabs in SingStar), the filled
+    // part lighter
+    DrawPassBar(X, Y, BAR_W, BAR_H, 1, Col.R, Col.G, Col.B, 0.9);
+    if (Progress > 0) then
+      DrawPassBar(X, Y, BAR_W, BAR_H, Progress,
+        Col.R + (1 - Col.R) * 0.45, Col.G + (1 - Col.G) * 0.45, Col.B + (1 - Col.B) * 0.45, 0.95);
+
+    Txt := UTF8String(Party.Teams[I].Players[P].Name);
+    if Warn and (NextP >= 0) and (NextP <> P) and
+       ((SDL_GetTicks() div PASS_BLINK_MS) mod 2 = 0) then
+      Txt := Format(Language.Translate('PARTY_PASS_NEXT'), [UTF8String(Party.Teams[I].Players[NextP].Name)]);
+
+    SetFontFamily(0);
+    SetFontStyle(ftBoldHighRes);
+    SetFontItalic(false);
+    // long names get a smaller font so that they fit into the bar
+    // (estimated from the number of characters: TextWidth loads glyphs
+    //  and crashed with a range check error in UFont)
+    Chars := 0;
+    for C := 1 to Length(Txt) do
+      if (Ord(Txt[C]) and $C0) <> $80 then
+        Inc(Chars);
+    FontSz := 18;
+    if (Chars > 0) and (Chars * 18 * 0.6 > BAR_W - 14) then
+    begin
+      FontSz := Int((BAR_W - 14) / (Chars * 0.6));
+      if (FontSz < 11) then
+        FontSz := 11;
+    end;
+    SetFontSize(FontSz);
+    SetFontColor(1, 1, 1, 1);
+    SetFontPos(X + 8, Y + (BAR_H - FontSz) / 2 - 1);
+    PrintText(Txt);
+  end;
+end;
+
+{ draws the left part Part (0..1) of the rounded bar texture, tinted }
+procedure TScreenSingView.DrawPassBar(X, Y, W, H, Part: real; R, G, B, Alpha: real);
+begin
+  if (PassBarTex = nil) then
+  begin
+    PassBarTex := Renderer.LoadTexture(Skin.GetTextureFileName('PartyTeamButton1'), TEXTURE_TYPE_TRANSPARENT, 0);
+    if (PassBarTex <> nil) then
+      PassBarTexX2 := PassBarTex.TexX2;
+  end;
+  if (PassBarTex = nil) or (Part <= 0) then
+  begin
+    if (Part > 0) then
+      Renderer.DrawQuad(X, Y, 0, W * Part, H, R, G, B, Alpha);
+    Exit;
+  end;
+  PassBarTex.X := X;
+  PassBarTex.Y := Y;
+  PassBarTex.Z := 0;
+  PassBarTex.W := W * Part;
+  PassBarTex.H := H;
+  // only the left part of the texture (texture coordinates may be < 1)
+  PassBarTex.TexX2 := PassBarTexX2 * Part;
+  PassBarTex.ColR := R;
+  PassBarTex.ColG := G;
+  PassBarTex.ColB := B;
+  PassBarTex.Alpha := Alpha;
+  PassBarTex.Reflection := false;
+  Renderer.DrawTexture(PassBarTex);
 end;
 
 procedure TScreenSingView.DrawCountIn;

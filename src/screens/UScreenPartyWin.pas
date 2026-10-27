@@ -63,6 +63,11 @@ type
 
       // "x of y rounds won" below each team
       TextRoundsTeam:    array[0..2] of cardinal;
+      // draw: a row can be shown in the size (bar and medal) of a row above;
+      // [row, size] (-1 if not needed), [r, r] are the statics of the theme
+      RowBar:            array[0..2, 0..2] of integer;
+      RowBG:             array[0..2, 0..2] of integer;
+      RowDeco:           array[0..2, 0..2] of integer;
       // index of the subtitle and legend text, -1 if not found
       SubtitleText:      integer;
       LegendText:        integer;
@@ -87,6 +92,8 @@ type
       procedure SetBestVisible(Show: boolean);
       procedure ArrangeBestBoxes;
       procedure MoveBestBox(Index: integer; X, Y: real);
+      procedure HideTeamRows;
+      procedure ShowTeamRow(Row, Size, Team: integer);
   end;
 
 const
@@ -105,6 +112,52 @@ uses
   UMain,
   UParty,
   UUnicodeUtils;
+
+{ theme entries of a row (0..2) }
+function ThemeRowBar(Row: integer): TThemeStatic;
+begin
+  case Row of
+    0: Result := Theme.PartyWin.StaticTeam1;
+    1: Result := Theme.PartyWin.StaticTeam2;
+    else Result := Theme.PartyWin.StaticTeam3;
+  end;
+end;
+
+function ThemeRowBG(Row: integer): TThemeStatic;
+begin
+  case Row of
+    0: Result := Theme.PartyWin.StaticTeam1BG;
+    1: Result := Theme.PartyWin.StaticTeam2BG;
+    else Result := Theme.PartyWin.StaticTeam3BG;
+  end;
+end;
+
+function ThemeRowDeco(Row: integer): TThemeStatic;
+begin
+  case Row of
+    0: Result := Theme.PartyWin.StaticTeam1Deco;
+    1: Result := Theme.PartyWin.StaticTeam2Deco;
+    else Result := Theme.PartyWin.StaticTeam3Deco;
+  end;
+end;
+
+function ThemeRowName(Row: integer): TThemeText;
+begin
+  case Row of
+    0: Result := Theme.PartyWin.TextNameTeam1;
+    1: Result := Theme.PartyWin.TextNameTeam2;
+    else Result := Theme.PartyWin.TextNameTeam3;
+  end;
+end;
+
+function ThemeRowScore(Row: integer): TThemeText;
+begin
+  case Row of
+    0: Result := Theme.PartyWin.TextScoreTeam1;
+    1: Result := Theme.PartyWin.TextScoreTeam2;
+    else Result := Theme.PartyWin.TextScoreTeam3;
+  end;
+end;
 
 function TScreenPartyWin.ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean;
 begin
@@ -155,7 +208,8 @@ const
 
 constructor TScreenPartyWin.Create;
 var
-  I: integer;
+  I, R, S, DY: integer;
+  TS: TThemeStatic;
 begin
   inherited Create;
 
@@ -177,6 +231,38 @@ begin
   StaticTeam3Deco := AddStatic (Theme.PartyWin.StaticTeam3Deco);
 
   TextWinner := AddText (Theme.PartyWin.TextWinner);
+
+  // draw: statics of the bigger rows, moved down to the lower rows
+  for R := 0 to 2 do
+    for S := 0 to 2 do
+    begin
+      RowBar[R, S] := -1;
+      RowBG[R, S] := -1;
+      RowDeco[R, S] := -1;
+    end;
+  RowBar[0, 0] := StaticTeam1;
+  RowBG[0, 0] := StaticTeam1BG;
+  RowDeco[0, 0] := StaticTeam1Deco;
+  RowBar[1, 1] := StaticTeam2;
+  RowBG[1, 1] := StaticTeam2BG;
+  RowDeco[1, 1] := StaticTeam2Deco;
+  RowBar[2, 2] := StaticTeam3;
+  RowBG[2, 2] := StaticTeam3BG;
+  RowDeco[2, 2] := StaticTeam3Deco;
+  for R := 1 to 2 do
+    for S := 0 to R - 1 do
+    begin
+      DY := ThemeRowBG(R).Y - ThemeRowBG(S).Y;
+      TS := ThemeRowBar(S);
+      TS.Y := TS.Y + DY;
+      RowBar[R, S] := AddStatic(TS);
+      TS := ThemeRowBG(S);
+      TS.Y := TS.Y + DY;
+      RowBG[R, S] := AddStatic(TS);
+      TS := ThemeRowDeco(S);
+      TS.Y := TS.Y + DY;
+      RowDeco[R, S] := AddStatic(TS);
+    end;
 
   LoadFromTheme(Theme.PartyWin);
 
@@ -226,15 +312,7 @@ begin
   Text[TextNameTeam1].Visible := false;
   Text[TextNameTeam2].Visible := false;
   Text[TextNameTeam3].Visible := false;
-  Statics[StaticTeam1].Visible := false;
-  Statics[StaticTeam1BG].Visible := false;
-  Statics[StaticTeam1Deco].Visible := false;
-  Statics[StaticTeam2].Visible := false;
-  Statics[StaticTeam2BG].Visible := false;
-  Statics[StaticTeam2Deco].Visible := false;
-  Statics[StaticTeam3].Visible := false;
-  Statics[StaticTeam3BG].Visible := false;
-  Statics[StaticTeam3Deco].Visible := false;
+  HideTeamRows;
   Text[TextRoundsTeam[0]].Visible := false;
   Text[TextRoundsTeam[1]].Visible := false;
   Text[TextRoundsTeam[2]].Visible := false;
@@ -321,6 +399,85 @@ begin
   Result := inherited Draw;
 end;
 
+procedure TScreenPartyWin.HideTeamRows;
+var
+  R, S: integer;
+begin
+  Text[TextScoreTeam1].Visible := false;
+  Text[TextScoreTeam2].Visible := false;
+  Text[TextScoreTeam3].Visible := false;
+  Text[TextNameTeam1].Visible := false;
+  Text[TextNameTeam2].Visible := false;
+  Text[TextNameTeam3].Visible := false;
+  for R := 0 to 2 do
+    for S := 0 to 2 do
+    begin
+      if (RowBar[R, S] >= 0) then
+        Statics[RowBar[R, S]].Visible := false;
+      if (RowBG[R, S] >= 0) then
+        Statics[RowBG[R, S]].Visible := false;
+      if (RowDeco[R, S] >= 0) then
+        Statics[RowDeco[R, S]].Visible := false;
+    end;
+end;
+
+{ shows the team in row Row (0..2) in the size and with the medal of row Size }
+procedure TScreenPartyWin.ShowTeamRow(Row, Size, Team: integer);
+var
+  C, NameText, ScoreText: integer;
+  DY: integer;
+  TT: TThemeText;
+begin
+  if (Size < 0) or (Size > Row) or (RowBar[Row, Size] < 0) then
+    Size := Row;
+  DY := ThemeRowBG(Row).Y - ThemeRowBG(Size).Y;
+
+  case Row of
+    0: begin NameText := TextNameTeam1; ScoreText := TextScoreTeam1; end;
+    1: begin NameText := TextNameTeam2; ScoreText := TextScoreTeam2; end;
+    else begin NameText := TextNameTeam3; ScoreText := TextScoreTeam3; end;
+  end;
+
+  TT := ThemeRowName(Size);
+  Text[NameText].X := TT.X;
+  Text[NameText].Y := TT.Y + DY;
+  Text[NameText].Size := TT.Size;
+  Text[NameText].Text := Party.Teams[Team].Name;
+  Text[NameText].Visible := true;
+
+  TT := ThemeRowScore(Size);
+  Text[ScoreText].X := TT.X;
+  Text[ScoreText].Y := TT.Y + DY;
+  Text[ScoreText].Size := TT.Size;
+  Text[ScoreText].Text := IntToStr(Party.Teams[Team].Score);
+  Text[ScoreText].Visible := true;
+
+  Text[TextRoundsTeam[Row]].X := ThemeRowName(Size).X;
+  Text[TextRoundsTeam[Row]].Y := ThemeRowBG(Row).Y + ThemeRowBG(Size).H + 2;
+
+  Statics[RowBar[Row, Size]].Visible := true;
+  Statics[RowBG[Row, Size]].Visible := true;
+  Statics[RowDeco[Row, Size]].Visible := true;
+
+  // bar and background in the team color
+  C := ColorExists('P' + IntToStr(Team + 1) + 'Dark');
+  if (C >= 0) then
+  begin
+    if (ThemeRowBG(Size).Color = 'TeamColor') then
+    begin
+      Statics[RowBG[Row, Size]].Texture.ColR := Color[C].RGB.R;
+      Statics[RowBG[Row, Size]].Texture.ColG := Color[C].RGB.G;
+      Statics[RowBG[Row, Size]].Texture.ColB := Color[C].RGB.B;
+    end;
+    if (ThemeRowBar(Size).Color = 'TeamColor') then
+    begin
+      Statics[RowBar[Row, Size]].Texture.ColR := Color[C].RGB.R;
+      Statics[RowBar[Row, Size]].Texture.ColG := Color[C].RGB.G;
+      Statics[RowBar[Row, Size]].Texture.ColB := Color[C].RGB.B;
+    end;
+  end;
+end;
+
 procedure TScreenPartyWin.OnShow;
 const
   BEST_KEYS: array[0..3] of string = ('PARTY_WIN_BEST_TOTAL', 'PARTY_WIN_BEST_NOTES',
@@ -329,15 +486,6 @@ var
  I, J: integer;
  Ranking: AParty_TeamRanking;
  WinnerCount: integer;
-
-  Function GetTeamColor(Team: integer): cardinal;
-  var
-    NameString: string;
-  begin
-    NameString := 'P' + InttoStr(Team+1) + 'Dark';
-
-    Result := ColorExists(NameString);
-  end;
 
 begin
   inherited;
@@ -383,7 +531,7 @@ begin
     Text[TextBestInfo[I]].Text := Format(Language.Translate('PARTY_WIN_BEST_INFO'),
       [Party.Best[I].Score, ShortenName(Party.Best[I].Song, 28)]);
     // (no color lookup without a team: "P0Dark" does not exist and the
-    //  result -1 does not fit into the cardinal of GetTeamColor)
+    //  result -1 does not fit into a cardinal)
     J := -1;
     if (Party.Best[I].Team >= 0) then
       J := ColorExists('P' + IntToStr(Party.Best[I].Team + 1) + 'Dark');
@@ -413,134 +561,17 @@ begin
     ApplausePlayed := true;
     AudioPlayback.PlaySound(SoundLib.Applause);
   end;
-  if (Length(Party.Teams) >= 1) then
-  begin
-    Text[TextScoreTeam1].Text := IntToStr(Party.Teams[Ranking[0].Team].Score);
-    Text[TextNameTeam1].Text := Party.Teams[Ranking[0].Team].Name;
-
-    Text[TextScoreTeam1].Visible := true;
-    Text[TextNameTeam1].Visible := true;
-    Statics[StaticTeam1].Visible := true;
-    Statics[StaticTeam1BG].Visible := true;
-    Statics[StaticTeam1Deco].Visible := true;
-
-    //Set Static Color to Team Color
-    if (Theme.PartyWin.StaticTeam1BG.Color = 'TeamColor') then
+  // teams in the order of the ranking; with a draw the lower row gets the
+  // size and the medal of the first row with the same rank
+  HideTeamRows;
+  for I := 0 to 2 do
+    if (I <= High(Ranking)) then
     begin
-      I := GetTeamColor(Ranking[0].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam1BG].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam1BG].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam1BG].Texture.ColB := Color[I].RGB.B;
-      end;
+      J := I;
+      while (J > 0) and (Ranking[J - 1].Rank = Ranking[I].Rank) do
+        Dec(J);
+      ShowTeamRow(I, J, Ranking[I].Team);
     end;
-
-    if (Theme.PartyWin.StaticTeam1.Color = 'TeamColor') then
-    begin
-      I := GetTeamColor(Ranking[0].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam1].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam1].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam1].Texture.ColB := Color[I].RGB.B;
-      end;
-    end;
-  end
-  else
-  begin
-    Text[TextScoreTeam1].Visible := false;
-    Text[TextNameTeam1].Visible := false;
-    Statics[StaticTeam1].Visible := false;
-    Statics[StaticTeam1BG].Visible := false;
-    Statics[StaticTeam1Deco].Visible := false;
-  end;
-
-  if (Length(Party.Teams) >= 2) then
-  begin
-    Text[TextScoreTeam2].Text := IntToStr(Party.Teams[Ranking[1].Team].Score);
-    Text[TextNameTeam2].Text := Party.Teams[Ranking[1].Team].Name;
-
-    Text[TextScoreTeam2].Visible := true;
-    Text[TextNameTeam2].Visible := true;
-    Statics[StaticTeam2].Visible := true;
-    Statics[StaticTeam2BG].Visible := true;
-    Statics[StaticTeam2Deco].Visible := true;
-
-    //Set Static Color to Team Color
-    if (Theme.PartyWin.StaticTeam2BG.Color = 'TeamColor') then
-    begin
-      I := GetTeamColor(Ranking[1].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam2BG].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam2BG].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam2BG].Texture.ColB := Color[I].RGB.B;
-      end;
-    end;
-
-    if (Theme.PartyWin.StaticTeam2.Color = 'TeamColor') then
-    begin
-      I := GetTeamColor(Ranking[1].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam2].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam2].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam2].Texture.ColB := Color[I].RGB.B;
-      end;
-    end;
-  end
-  else
-  begin
-    Text[TextScoreTeam2].Visible := false;
-    Text[TextNameTeam2].Visible := false;
-    Statics[StaticTeam2].Visible := false;
-    Statics[StaticTeam2BG].Visible := false;
-    Statics[StaticTeam2Deco].Visible := false;
-  end;
-
-  if (Length(Party.Teams) >= 3) then
-  begin
-    Text[TextScoreTeam3].Text := IntToStr(Party.Teams[Ranking[2].Team].Score);
-    Text[TextNameTeam3].Text := Party.Teams[Ranking[2].Team].Name;
-
-    Text[TextScoreTeam3].Visible := true;
-    Text[TextNameTeam3].Visible := true;
-    Statics[StaticTeam3].Visible := true;
-    Statics[StaticTeam3BG].Visible := true;
-    Statics[StaticTeam3Deco].Visible := true;
-
-    //Set Static Color to Team Color
-    if (Theme.PartyWin.StaticTeam3BG.Color = 'TeamColor') then
-    begin
-      I := GetTeamColor(Ranking[2].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam3BG].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam3BG].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam3BG].Texture.ColB := Color[I].RGB.B;
-      end;
-    end;
-
-    if (Theme.PartyWin.StaticTeam3.Color = 'TeamColor') then
-    begin
-      I := GetTeamColor(Ranking[2].Team);
-      if (I <> -1) then
-      begin
-        Statics[StaticTeam3].Texture.ColR := Color[I].RGB.R;
-        Statics[StaticTeam3].Texture.ColG := Color[I].RGB.G;
-        Statics[StaticTeam3].Texture.ColB := Color[I].RGB.B;
-      end;
-    end;
-  end
-  else
-  begin
-    Text[TextScoreTeam3].Visible := false;
-    Text[TextNameTeam3].Visible := false;
-    Statics[StaticTeam3].Visible := false;
-    Statics[StaticTeam3BG].Visible := false;
-    Statics[StaticTeam3Deco].Visible := false;
-  end;
 end;
 
 end.

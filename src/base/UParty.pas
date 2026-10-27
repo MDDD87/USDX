@@ -125,6 +125,8 @@ type
     procedure GenScores;
     function GetRandomMode: integer;
     function GetRandomPlayer(Team: integer): integer;
+    function GetRandomPlayerExcept(Team, ExceptPlayer: integer): integer;
+    procedure PrepareDuetRound;
 
     { returns true if a mode is playable with current playerconfig }
     function ModePlayable(I: integer): boolean;
@@ -146,6 +148,21 @@ type
     // best performances of the party (party winner screen, page 2):
     // total score, note points, golden note points, line bonus
     Best: array[0..3] of TParty_Best;
+
+    // duet rounds (Feature 4): two members of a team sing a duet together,
+    // the teams sing the same song one after another
+    DuetRoundNo:     integer;  //< number of duet rounds started in this party
+    DuetSong:        integer;  //< song of the current duet round (CatSongs index), -1 if not chosen yet
+    DuetPassesDone:  integer;  //< number of teams that have already sung
+    DuetTeam:        integer;  //< team that sings (or has just sung) the current pass
+    DuetOrder:       array of integer;  //< order of the teams
+    DuetSinger:      array of array[0..1] of integer;  //< player index per team and voice (P1, P2)
+    DuetVoiceScore:  array of array[0..1] of integer;  //< scores of both voices per team
+    DuetTeamScore:   array of integer;  //< team score: average of both voices
+
+    // Pass the Mic (Feature 5.3): beats at which the next team member sings
+    // (computed when the song is loaded, see TScreenSingController)
+    PassChangeBeats: array of integer;
 
     property CurrentRound: Integer read CurRound;
 
@@ -255,8 +272,38 @@ type
       shown and saved under the team name. }
     function IsTeamScoreRound: boolean;
 
-    { true if the current round is a medley or micro medley round }
+    { true if the current round is a medley or micro medley round
+      (including Pass the Medley / Pass the Micro-Medley) }
     function IsAnyMedleyRound: boolean;
+
+    { Pass the Medley / Pass the Micro-Medley (Feature 5.2): after every
+      section the next member of each team sings (the team mic is passed on) }
+    function IsPassMedleyRound: boolean;
+    { member of team Team who sings medley section Section (0 = first);
+      also used for Pass the Mic (Section = number of changes so far) }
+    function PassMedleySinger(Team, Section: integer): integer;
+    { true in Pass the Mic, Pass the Medley and Pass the Micro-Medley }
+    function IsAnyPassRound: boolean;
+    { lead-in before a party medley section in seconds (time to pass the mic) }
+    function MedleyLeadIn: integer;
+
+    { duet rounds (Feature 4, game/plugins/duet.usdx) }
+    function IsDuetRound: boolean;
+    { true if the party song pool contains a duet song }
+    function DuetSongAvailable: boolean;
+    { name of the member of team Team who sings voice Voice (0 = P1, 1 = P2) }
+    function DuetSingerName(Team, Voice: integer): UTF8String;
+    { team that sings the next pass }
+    function DuetNextTeam: integer;
+    { starts the next pass (sets DuetTeam) }
+    procedure StartDuetPass;
+    { stores the result of the pass that was just sung }
+    procedure RecordDuetPass(Score1, Score2: integer);
+    { true while not all teams have sung the duet of the current round }
+    function DuetPassesLeft: boolean;
+    { screen after the score (and highscore) screen in party mode: the
+      announcement of the next duet pass or the party score screen }
+    function ScreenAfterRoundScores: Pointer;
 
     { party medley parameters of the current round:
       number of songs and maximum length of each section in seconds }
@@ -310,6 +357,9 @@ const
     instead of a single person. Normal entries use 1 shl Track (1, 2, ...).
     The marker allows moving team entries to a separate team list later. }
   PARTY_TEAM_SCORE_TRACKMASK = 0;
+  { highscore entry of a duet team ("A & B", average of both voices):
+    marked as "both voices" (track 1 and 2) }
+  PARTY_DUET_SCORE_TRACKMASK = 3;
 
   { maximum length of team and player names entered on the party player
     screen, and of names shown on the score screen (longer ones are cut) }
@@ -324,6 +374,7 @@ const
   PARTY_MICROMEDLEY_SONGS   = 8;
   PARTY_MICROMEDLEY_SECONDS = 15;
   PARTY_MEDLEY_LEADIN       = 3;
+  PARTY_PASSMEDLEY_LEADIN   = 5; // Pass the Medley: time to pass the mic
 
   { amount of jokers each team gets at the beginning of the game }
   Party_Count_Jokers = 5;
@@ -385,6 +436,16 @@ begin
 
   SetLength(Teams, 0); //remove team info
   SetLength(Rounds, 0); //remove round info
+
+  DuetRoundNo := 0;
+  DuetSong := -1;
+  DuetPassesDone := 0;
+  DuetTeam := 0;
+  SetLength(DuetOrder, 0);
+  SetLength(DuetSinger, 0);
+  SetLength(DuetVoiceScore, 0);
+  SetLength(DuetTeamScore, 0);
+  SetLength(PassChangeBeats, 0);
 
   for I := 0 to High(Best) do
   begin
@@ -573,6 +634,13 @@ function TPartyGame.ModePlayable(I: integer): boolean;
 begin
   if (Length(Teams) = 0) then
     Result := true
+  else if (LowerCase(Modes[I].Name) = 'duet') then
+  begin
+    // duet: every team needs two singers and the song pool a duet song
+    Result := DuetSongAvailable;
+    for J := 0 to High(Teams) do
+      Result := Result and (Length(Teams[J].Players) >= 2);
+  end
   else
   begin
     if (Modes[I].TeamCount and (1 shl (Length(Teams) - 1)) <> 0) then
@@ -782,17 +850,21 @@ procedure TPartyGame.SetRankingByScore;
     TmpRanking: TParty_TeamRanking;
     TmpScore: Integer;
 begin
-  if (Length(Player) = Length(Teams)) then
+  if (Length(Player) = Length(Teams)) or
+     (IsDuetRound and (Length(DuetTeamScore) = Length(Teams))) then
   begin
     SetLength(Ranking, Length(Teams));
     SetLength(Scores, Length(Teams));
 
-    // fill ranking array
+    // fill ranking array (duet round: the team scores of all passes)
     for I := 0 to High(Ranking) do
     begin
       Ranking[I].Team := I;
       Ranking[I].Rank := 0;
-      Scores[I] := Player[I].ScoreTotalInt;
+      if IsDuetRound and (Length(DuetTeamScore) = Length(Teams)) then
+        Scores[I] := DuetTeamScore[I]
+      else
+        Scores[I] := Player[I].ScoreTotalInt;
     end;
 
     // bubble sort by score
@@ -841,13 +913,38 @@ end;
   returns the number of the current round or -1 if last round has already
   been played }
 function TPartyGame.NextRound: integer;
-  var I: Integer;
+  var I, J: Integer;
 begin
   // some lines concerning the previous round
   if (CurRound >= 0) then
   begin
     IncTimesPlayed;
-    
+
+    // Pass the Mic: the other members who sang count, too
+    if IsTeamScoreRound then
+      for I := 0 to High(Teams) do
+        for J := 1 to Length(Teams[I].Players) - 1 do
+          if (J <= Length(PassChangeBeats)) then
+            Inc(Teams[I].Players[PassMedleySinger(I, J)].TimesPlayed);
+
+    // Pass the Medley: the other members who sang a section count, too
+    if IsPassMedleyRound then
+      for I := 0 to High(Teams) do
+        for J := 1 to Length(Teams[I].Players) - 1 do
+          if (J < MedleySongCount) then
+          Inc(Teams[I].Players[PassMedleySinger(I, J)].TimesPlayed);
+
+    // duet round: the second singer of each team has sung, too
+    if IsDuetRound then
+      for I := 0 to High(Teams) do
+        if (I <= High(DuetSinger)) then
+        begin
+          if (DuetSinger[I][0] <> Teams[I].NextPlayer) and (DuetSinger[I][0] >= 0) then
+            Inc(Teams[I].Players[DuetSinger[I][0]].TimesPlayed)
+          else if (DuetSinger[I][1] <> Teams[I].NextPlayer) and (DuetSinger[I][1] >= 0) then
+            Inc(Teams[I].Players[DuetSinger[I][1]].TimesPlayed);
+        end;
+
     Rounds[CurRound].AlreadyPlayed := true;
 
     GenScores;
@@ -869,6 +966,9 @@ begin
     // select player
     for I := 0 to High(Teams) do
       Teams[I].NextPlayer := GetRandomPlayer(I);
+
+    if IsDuetRound then
+      PrepareDuetRound;
   end;
 end;
 
@@ -988,6 +1088,10 @@ begin
   //set correct playersplay
   if (bPartyGame) then
     PlayersPlay := Length(Teams);
+
+  // duet round: the two singers of one team (mic 1 = P1, mic 2 = P2)
+  if (bPartyGame) and IsDuetRound and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+    PlayersPlay := 2;
 
   if (ScreenSong.Mode = smPartyTournament) then
     PlayersPlay := 2;
@@ -1176,7 +1280,42 @@ end;
 
 function TPartyGame.IsAnyMedleyRound: boolean;
 begin
-  Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley');
+  Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley') or
+    IsPassMedleyRound;
+end;
+
+function TPartyGame.IsPassMedleyRound: boolean;
+begin
+  Result := (CurrentModeName = 'passthemedley') or (CurrentModeName = 'passthemicromedley');
+end;
+
+function TPartyGame.PassMedleySinger(Team, Section: integer): integer;
+var
+  N: integer;
+begin
+  Result := -1;
+  if (Team < 0) or (Team > High(Teams)) then
+    Exit;
+  N := Length(Teams[Team].Players);
+  if (N = 0) then
+    Exit;
+  if (Section < 0) then
+    Section := 0;
+  // starts with the member chosen for this round, then in turn
+  Result := (Teams[Team].NextPlayer + Section) mod N;
+end;
+
+function TPartyGame.IsAnyPassRound: boolean;
+begin
+  Result := IsTeamScoreRound or IsPassMedleyRound;
+end;
+
+function TPartyGame.MedleyLeadIn: integer;
+begin
+  if IsPassMedleyRound then
+    Result := PARTY_PASSMEDLEY_LEADIN
+  else
+    Result := PARTY_MEDLEY_LEADIN;
 end;
 
 function TPartyGame.RoundPoints(Team: integer): integer;
@@ -1243,7 +1382,7 @@ end;
 
 function TPartyGame.MedleySongCount: integer;
 begin
-  if (CurrentModeName = 'micromedley') then
+  if (CurrentModeName = 'micromedley') or (CurrentModeName = 'passthemicromedley') then
     Result := PARTY_MICROMEDLEY_SONGS
   else
     Result := PARTY_MEDLEY_SONGS;
@@ -1251,7 +1390,7 @@ end;
 
 function TPartyGame.MedleySectionSeconds: integer;
 begin
-  if (CurrentModeName = 'micromedley') then
+  if (CurrentModeName = 'micromedley') or (CurrentModeName = 'passthemicromedley') then
     Result := PARTY_MICROMEDLEY_SECONDS
   else
     Result := PARTY_MEDLEY_SECONDS;
@@ -1265,7 +1404,8 @@ end;
 function TPartyGame.GetScoreName(Team: integer): UTF8String;
 begin
   Result := '';
-  if IsTeamScoreRound then
+  // Pass the Mic and Pass the Medley: the score belongs to the team
+  if IsTeamScoreRound or IsPassMedleyRound then
   begin
     if (Team >= 0) and (Team <= High(Teams)) then
       Result := UTF8String(Trim(Teams[Team].Name));
@@ -1277,13 +1417,14 @@ end;
 function TPartyGame.RoundSavesHighscores: boolean;
 const
   // party modes with a complete song and the normal scoring (lower case)
-  ALLOWED_MODES: array[0..5] of string = (
+  ALLOWED_MODES: array[0..6] of string = (
     'duel',        // Duel
     'blind',       // Blind (notes hidden)
     'blindlyrics', // Blind (lyrics hidden)
     'blindtotal',  // Blind (notes and lyrics hidden)
     'deaf',        // music muted at times, normal scoring
-    'teamduel'     // Pass the Mic: saved under the team name (team score)
+    'teamduel',    // Pass the Mic: saved under the team name (team score)
+    'duet'         // duet: both voices and the team entry "A & B"
   );
 var
   ModeName: string;
@@ -1303,12 +1444,175 @@ begin
 end;
 
 function TPartyGame.GetSingerName(Team: integer): UTF8String;
+var
+  P: integer;
 begin
+  // Pass the Medley: the member who sings the current section
+  if IsPassMedleyRound and (Team >= 0) and (Team <= High(Teams)) then
+  begin
+    Result := '';
+    P := PassMedleySinger(Team, PlaylistMedley.CurrentMedleySong - 1);
+    if (P >= 0) and (P <= High(Teams[Team].Players)) then
+      Result := UTF8String(Trim(Teams[Team].Players[P].Name));
+    Exit;
+  end;
+
+  // duet round: Player[Team] is voice Team of the team that sings
+  if IsDuetRound and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
+  begin
+    Result := DuetSingerName(DuetTeam, Team);
+    Exit;
+  end;
+
   Result := '';
   if (Team >= 0) and (Team <= High(Teams)) then
     with Teams[Team] do
       if (NextPlayer >= 0) and (NextPlayer <= High(Players)) then
         Result := UTF8String(Trim(Players[NextPlayer].Name));
+end;
+
+{ ---------- duet rounds (Feature 4) ---------- }
+
+function TPartyGame.IsDuetRound: boolean;
+begin
+  Result := (CurrentModeName = 'duet');
+end;
+
+function TPartyGame.DuetSongAvailable: boolean;
+var
+  I: integer;
+begin
+  Result := false;
+  for I := 0 to High(CatSongs.Song) do
+    if not CatSongs.Song[I].Main and CatSongs.Song[I].isDuet and
+       ScreenSong.InPartySongPool(I) then
+      Exit(true);
+end;
+
+{ like GetRandomPlayer, but never player ExceptPlayer }
+function TPartyGame.GetRandomPlayerExcept(Team, ExceptPlayer: integer): integer;
+var
+  I, R, LowestTP, NumPwithLTP: integer;
+begin
+  Result := -1;
+  LowestTP := high(integer);
+  NumPwithLTP := 0;
+  for I := 0 to High(Teams[Team].Players) do
+    if (I <> ExceptPlayer) then
+    begin
+      if (Teams[Team].Players[I].TimesPlayed < LowestTP) then
+      begin
+        LowestTP := Teams[Team].Players[I].TimesPlayed;
+        NumPwithLTP := 1;
+      end
+      else if (Teams[Team].Players[I].TimesPlayed = LowestTP) then
+        Inc(NumPwithLTP);
+    end;
+
+  if (NumPwithLTP = 0) then
+    Exit;
+
+  R := Random(NumPwithLTP);
+  for I := 0 to High(Teams[Team].Players) do
+    if (I <> ExceptPlayer) and (Teams[Team].Players[I].TimesPlayed = LowestTP) then
+    begin
+      if (R = 0) then
+      begin
+        Result := I;
+        Exit;
+      end;
+      Dec(R);
+    end;
+end;
+
+{ chooses the two singers of every team, the voices and the order of the
+  teams. Voices and order change with every further duet round. }
+procedure TPartyGame.PrepareDuetRound;
+var
+  T, A, B, Tmp, N: integer;
+begin
+  N := Length(Teams);
+  SetLength(DuetOrder, N);
+  SetLength(DuetSinger, N);
+  SetLength(DuetVoiceScore, N);
+  SetLength(DuetTeamScore, N);
+
+  for T := 0 to N - 1 do
+  begin
+    A := Teams[T].NextPlayer;
+    B := GetRandomPlayerExcept(T, A);
+    // change the voices with every duet round
+    if Odd(DuetRoundNo) and (B >= 0) then
+    begin
+      Tmp := A;
+      A := B;
+      B := Tmp;
+    end;
+    DuetSinger[T][0] := A;
+    DuetSinger[T][1] := B;
+    DuetVoiceScore[T][0] := 0;
+    DuetVoiceScore[T][1] := 0;
+    DuetTeamScore[T] := 0;
+    // the team that starts changes with every duet round
+    DuetOrder[T] := (DuetRoundNo + T) mod N;
+  end;
+
+  Inc(DuetRoundNo);
+  DuetSong := -1;
+  DuetPassesDone := 0;
+  if (N > 0) then
+    DuetTeam := DuetOrder[0]
+  else
+    DuetTeam := 0;
+end;
+
+function TPartyGame.DuetSingerName(Team, Voice: integer): UTF8String;
+var
+  P: integer;
+begin
+  Result := '';
+  if (Team < 0) or (Team > High(Teams)) or (Team > High(DuetSinger)) or
+     (Voice < 0) or (Voice > 1) then
+    Exit;
+  P := DuetSinger[Team][Voice];
+  if (P >= 0) and (P <= High(Teams[Team].Players)) then
+    Result := UTF8String(Trim(Teams[Team].Players[P].Name));
+end;
+
+function TPartyGame.DuetNextTeam: integer;
+begin
+  if (DuetPassesDone >= 0) and (DuetPassesDone <= High(DuetOrder)) then
+    Result := DuetOrder[DuetPassesDone]
+  else
+    Result := DuetTeam;
+end;
+
+procedure TPartyGame.StartDuetPass;
+begin
+  DuetTeam := DuetNextTeam;
+end;
+
+procedure TPartyGame.RecordDuetPass(Score1, Score2: integer);
+begin
+  if (DuetTeam < 0) or (DuetTeam > High(DuetTeamScore)) then
+    Exit;
+  DuetVoiceScore[DuetTeam][0] := Score1;
+  DuetVoiceScore[DuetTeam][1] := Score2;
+  DuetTeamScore[DuetTeam] := Round((Score1 + Score2) / 2);
+  Inc(DuetPassesDone);
+end;
+
+function TPartyGame.DuetPassesLeft: boolean;
+begin
+  Result := IsDuetRound and (DuetPassesDone < Length(Teams));
+end;
+
+function TPartyGame.ScreenAfterRoundScores: Pointer;
+begin
+  if DuetPassesLeft then
+    Result := @ScreenPartyNewRound
+  else
+    Result := @ScreenPartyScore;
 end;
 
 function TPartyGame.SongAlreadySung(ID: integer): boolean;

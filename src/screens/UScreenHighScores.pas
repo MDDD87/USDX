@@ -100,6 +100,8 @@ type
       procedure ShowScoresForDifficulty(difficulty: integer);
       procedure PlayNewHighscoreSound;
       procedure FindOwnEntries;
+      function  PartyDuetRound: boolean;
+      procedure KeepOnlyDuetTeamScores;
       function Draw: boolean; override;
   end;
 
@@ -350,7 +352,8 @@ end;
 function TScreenHighScores.NextScreen: PMenu;
 begin
   if Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
-    Result := @ScreenPartyScore
+    // duet round: announcement of the next team, otherwise party score
+    Result := Party.ScreenAfterRoundScores
   else
     Result := @ScreenSong;
 end;
@@ -449,8 +452,9 @@ begin
   SetLength(EntryHighlightStatic, Theme.HighScores.List.MaxEntries);
   for I := 0 to Theme.HighScores.List.MaxEntries - 1 do
   begin
+    // white bar, tinted with the player/team color (Texture.ColR/G/B)
     EntryHighlightStatic[I] := AddStatic(HIGHLIGHT_X, 0, HIGHLIGHT_W, 40, 1, 1, 1,
-      Skin.GetTextureFileName('PartyRoundBG2'), TEXTURE_TYPE_COLORIZED);
+      Skin.GetTextureFileName('PartyTeamButton1'), TEXTURE_TYPE_TRANSPARENT);
     Statics[EntryHighlightStatic[I]].Visible := false;
   end;
 
@@ -497,6 +501,8 @@ begin
   UpdateEntryLayout;
   UpdateHeaderText;
   LoadCurrentSongScores;
+  if PartyDuetRound then
+    KeepOnlyDuetTeamScores;
 
   Text[TextArtistTitle].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
@@ -508,6 +514,41 @@ begin
     PlayNewHighscoreSound;
 
   ShowScoresForDifficulty(Player[0].Level);
+end;
+
+function TScreenHighScores.PartyDuetRound: boolean;
+begin
+  Result := Party.bPartyGame and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) and
+    Party.IsDuetRound and CurrentSong.isDuet;
+end;
+
+{ party duet round: only the team entries ("A & B") are shown, not the single
+  voices (they stay in the database; this only changes the loaded list) }
+procedure TScreenHighScores.KeepOnlyDuetTeamScores;
+const
+  // the team entries (average) are often below the single voices: read
+  // enough entries so that the best team entries are not cut off
+  DUET_READ_ENTRIES = 1000;
+var
+  D, I, N: integer;
+begin
+  try
+    DataBase.ReadScore(CurrentSong, DUET_READ_ENTRIES);
+  except
+    // keep the list loaded before
+  end;
+  for D := 0 to High(CurrentSong.Score) do
+  begin
+    N := 0;
+    for I := 0 to High(CurrentSong.Score[D]) do
+      if (CurrentSong.Score[D, I].TrackMask = PARTY_DUET_SCORE_TRACKMASK) and
+         (N < Theme.HighScores.List.MaxEntries) then
+      begin
+        CurrentSong.Score[D, N] := CurrentSong.Score[D, I];
+        Inc(N);
+      end;
+    SetLength(CurrentSong.Score[D], N);
+  end;
 end;
 
 { finds the entries of the players of the song just sung (name and score,
@@ -522,6 +563,24 @@ begin
   SetLength(OwnEntry, PlayersPlay);
   SetLength(OwnColor, PlayersPlay);
   Level := Player[0].Level;
+
+  // party duet round: the team entry "A & B" in the team color
+  if PartyDuetRound and (PlayersPlay >= 2) then
+  begin
+    for I := 0 to High(OwnEntry) do
+      OwnEntry[I] := -1;
+    OwnColor[0] := GetPlayerColor(Ini.SingColor[Party.DuetTeam]);
+    Name := Party.GetScoreName(0) + ' & ' + Party.GetScoreName(1);
+    for J := 0 to High(CurrentSong.Score[Level]) do
+      if (CurrentSong.Score[Level, J].Name = Name) and
+         (CurrentSong.Score[Level, J].Score = Round((Player[0].ScoreTotalInt + Player[1].ScoreTotalInt) / 2)) then
+      begin
+        OwnEntry[0] := J;
+        Break;
+      end;
+    Exit;
+  end;
+
   for I := 0 to PlayersPlay - 1 do
   begin
     OwnEntry[I] := -1;

@@ -1,0 +1,46 @@
+--[[
+ * UltraStar Deluxe - Karaoke Game
+ *
+ * UltraStar Deluxe is the legal property of its developers, whose names
+ * are too numerous to list here. Please refer to the COPYRIGHT
+ * file distributed with this source distribution.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING. If not, write to
+ * the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
+ *]]
+
+-- Party mode "Pass the Micro-Medley" (SingStar style, Feature 5.2):
+-- like Micro-Medley (up to 8 sections of about 15 s), but after every section the next member of each
+-- team sings: the team mic is passed on (5 s lead-in). The score belongs to
+-- the team. No highscores.
+--
+-- This plugin only registers the round type. The medley is played by the
+-- game (party medley), which recognizes the mode by its name 'PassTheMicroMedley'.
+
+function plugin_init()
+  register('party mode: pass the micro-medley', '1.00', 'USDX Team', 'http://www.UltrastarDeluxe.org');
+
+  require('Usdx.Party')
+
+  local Mode = {}
+
+  Mode.Name = 'PassTheMicroMedley'
+  Mode.CanNonParty = false;
+  Mode.CanParty = true;
+
+  Usdx.Party.Register(Mode)
+
+  return true;
+end
