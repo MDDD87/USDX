@@ -86,7 +86,7 @@ type
     procedure SaveLocalScores;
     function PartyRoundSavesHighscores: boolean;
     function PartyDuetRound: boolean;
-    procedure ShowPassMedleySingers;
+    procedure PreparePassTheMic;
     function GetHighscoreName(PlayerIndex: integer): UTF8String;
     procedure RecordPartyPerformances;
   public
@@ -1174,6 +1174,9 @@ begin
     fCountIn := false;
 
   // Set up Medley timings
+  // Pass the Mic: where the mic is passed on to the next team member
+  PreparePassTheMic;
+
   if ScreenSong.MedleyActive then
   begin
     // party medley: shorter sections and a short lead-in (before the notes
@@ -1190,9 +1193,6 @@ begin
     else
       Text[screenSingViewRef.SongNameText].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
-    // Pass the Medley: who sings this section (the team mic is passed on)
-    if ScreenSong.PartyMedley and Party.IsPassMedleyRound then
-      ShowPassMedleySingers;
 
     //medley start and end timestamps
     StartNote := FindNote(CurrentSong.Medley.StartBeat - round(CurrentSong.BPM*CurrentSong.Medley.FadeIn_time/60));
@@ -2049,23 +2049,75 @@ begin
   Result := Party.bPartyGame and Party.RoundSavesHighscores;
 end;
 
-{ Pass the Medley: message with the singer of each team for this section }
-procedure TScreenSingController.ShowPassMedleySingers;
+{ Pass the Mic (party round type teamduel): the points at which the mic is
+  passed on to the next team member. Like the former Lua plugin: a change
+  after every 6 to 12 percent of the hittable notes of the song, always at
+  the start of a lyrics line (or every few lines without hittable notes). }
+procedure TScreenSingController.PreparePassTheMic;
+const
+  MIN_PERCENTAGE = 0.06;
+  MAX_PERCENTAGE = 0.12;
 var
-  I: integer;
-  Names: UTF8String;
-begin
-  Names := '';
-  for I := 0 to PlayersPlay - 1 do
+  L, N, Step, Count: integer;
+  LineValue: array of integer;
+  TotalBeats, Beats, BeatsToChange: integer;
+
+  procedure AddChange(Line: integer);
   begin
-    if (Names <> '') then
-      Names := Names + ', ';
-    Names := Names + Party.GetSingerName(I);
+    if (System.Length(CurrentSong.Tracks[0].Lines[Line].Notes) = 0) then
+      Exit;
+    Count := System.Length(Party.PassChangeBeats);
+    SetLength(Party.PassChangeBeats, Count + 1);
+    Party.PassChangeBeats[Count] := CurrentSong.Tracks[0].Lines[Line].Notes[0].StartBeat;
   end;
-  if (PlaylistMedley.CurrentMedleySong <= 1) then
-    screenSingViewRef.WriteMessage(Format(Language.Translate('PARTY_PASSMEDLEY_FIRST'), [Names]))
+
+begin
+  SetLength(Party.PassChangeBeats, 0);
+  if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
+     not Party.IsTeamScoreRound or (System.Length(CurrentSong.Tracks) = 0) then
+    Exit;
+
+  // (no "with" here: the track record has its own field named "High")
+  SetLength(LineValue, System.Length(CurrentSong.Tracks[0].Lines));
+  TotalBeats := 0;
+  for L := 0 to System.High(CurrentSong.Tracks[0].Lines) do
+  begin
+    LineValue[L] := 0;
+    for N := 0 to System.High(CurrentSong.Tracks[0].Lines[L].Notes) do
+      Inc(LineValue[L], CurrentSong.Tracks[0].Lines[L].Notes[N].Duration *
+        ScoreFactor[CurrentSong.Tracks[0].Lines[L].Notes[N].NoteType]);
+    Inc(TotalBeats, LineValue[L]);
+  end;
+
+  if (TotalBeats = 0) then
+  begin
+    // only freestyle notes: a change every few lines
+    L := 0;
+    repeat
+      if (L > 0) then
+        AddChange(L);
+      Step := Ceil((MIN_PERCENTAGE + (MAX_PERCENTAGE - MIN_PERCENTAGE) * Random) *
+        System.Length(CurrentSong.Tracks[0].Lines));
+      if (Step < 1) then
+        Step := 1;
+      Inc(L, Step);
+    until (L >= System.High(CurrentSong.Tracks[0].Lines));
+  end
   else
-    screenSingViewRef.WriteMessage(Format(Language.Translate('PARTY_PASSMEDLEY_PASS'), [Names]));
+  begin
+    Beats := 0;
+    BeatsToChange := Ceil((MIN_PERCENTAGE + (MAX_PERCENTAGE - MIN_PERCENTAGE) * Random) * TotalBeats);
+    for L := 0 to System.High(CurrentSong.Tracks[0].Lines) - 1 do
+    begin
+      Inc(Beats, LineValue[L]);
+      if (Beats >= BeatsToChange) then
+      begin
+        AddChange(L + 1);
+        BeatsToChange := BeatsToChange +
+          Ceil((MIN_PERCENTAGE + (MAX_PERCENTAGE - MIN_PERCENTAGE) * Random) * TotalBeats);
+      end;
+    end;
+  end;
 end;
 
 function TScreenSingController.PartyDuetRound: boolean;

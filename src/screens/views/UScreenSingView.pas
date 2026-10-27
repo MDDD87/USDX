@@ -207,6 +207,7 @@ type
     // party mode: team number instead of the empty avatar picture
     procedure PreparePartyTeamNumbers();
     procedure DrawPartyTeamNumbers();
+    procedure DrawPassBars();
     procedure DrawCountdown(timeDiff: real);
     function Draw: boolean;
 
@@ -949,6 +950,7 @@ begin
   // draw static menu (FG)
   ScreenSing.DrawFG;
   DrawPartyTeamNumbers;
+  DrawPassBars;
 
   //Medley Countdown
   if ScreenSong.MedleyActive then
@@ -1086,15 +1088,12 @@ begin
     ScreenSing.PlayerDuetNames[2] := ScreenSing.PlayerNames[2];
   end
   else
-    // other rounds: the team names again (after a duet round); Pass the
-    // Medley: the member who sings the current section
+    // other rounds: the team names again (after a duet round); in the Pass
+    // rounds the singer is shown in the bar below (DrawPassBars)
     for N := 1 to PlayersPlay do
       if (N - 1 <= High(Party.Teams)) and (Party.Teams[N-1].Name <> '') then
       begin
-        if Party.IsPassMedleyRound and (Party.GetSingerName(N-1) <> '') then
-          ScreenSing.PlayerNames[N] := ShortenName(Party.GetSingerName(N-1), PARTY_TEAMNAME_MAXLEN)
-        else
-          ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
+        ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
         ScreenSing.PlayerDuetNames[N] := ScreenSing.PlayerNames[N];
       end;
 
@@ -1158,6 +1157,86 @@ begin
     SetFontPos(PartyNumberBox[I].X + (PartyNumberBox[I].W - TextW) / 2,
                PartyNumberBox[I].Y + (PartyNumberBox[I].H - FontSize) / 2);
     PrintText(NumText);
+  end;
+end;
+
+{ Pass the Mic, Pass the Medley, Pass the Micro-Medley (like SingStar): below
+  the team number and name a bar in the team color with the member who sings.
+  Some seconds before the mic is passed on the bar fills up, and the text
+  changes between "NEXT: <name>" and the current singer. }
+procedure TScreenSingView.DrawPassBars();
+const
+  PASS_WARN_SECONDS = 8;    // the bar fills up during this time
+  PASS_BLINK_MS     = 1500; // change of the text
+  BAR_W = 230;
+  BAR_H = 24;
+var
+  I, Step, P, NextP: integer;
+  TimeToChange, Progress: real;
+  Col: TRGB;
+  X, Y: real;
+  Txt: UTF8String;
+  Warn: boolean;
+begin
+  if not Party.bPartyGame or not (ScreenSong.Mode in [smPartyClassic, smPartyFree]) or
+     not Party.IsAnyPassRound then
+    Exit;
+
+  // current step (number of changes so far) and time to the next change
+  Step := 0;
+  TimeToChange := -1;
+  if Party.IsPassMedleyRound then
+  begin
+    Step := PlaylistMedley.CurrentMedleySong - 1;
+    if (PlaylistMedley.CurrentMedleySong < PlaylistMedley.NumMedleySongs) then
+      TimeToChange := ScreenSing.MedleyEnd - AudioPlayback.Position;
+  end
+  else
+  begin
+    while (Step <= High(Party.PassChangeBeats)) and
+          (LyricsState.CurrentBeat >= Party.PassChangeBeats[Step]) do
+      Inc(Step);
+    if (Step <= High(Party.PassChangeBeats)) then
+      TimeToChange := GetTimeFromBeat(Party.PassChangeBeats[Step]) - LyricsState.GetCurrentTime();
+  end;
+
+  Warn := (TimeToChange >= 0) and (TimeToChange <= PASS_WARN_SECONDS);
+  if Warn then
+    Progress := 1 - TimeToChange / PASS_WARN_SECONDS
+  else
+    Progress := 0;
+
+  for I := 0 to PartyNumberCount - 1 do
+  begin
+    if (I > High(Party.Teams)) then
+      Break;
+    P := Party.PassMedleySinger(I, Step);
+    NextP := Party.PassMedleySinger(I, Step + 1);
+    if (P < 0) then
+      Continue;
+
+    X := PartyNumberBox[I].X;
+    Y := PartyNumberBox[I].Y + PartyNumberBox[I].H + 3;
+    Col := GetPlayerColor(Ini.SingColor[I]);
+
+    // bar in the team color, the filled part lighter
+    Renderer.DrawQuad(X, Y, 0, BAR_W, BAR_H, Col.R, Col.G, Col.B, 0.9);
+    if (Progress > 0) then
+      Renderer.DrawQuad(X, Y, 0, BAR_W * Progress, BAR_H,
+        Col.R + (1 - Col.R) * 0.45, Col.G + (1 - Col.G) * 0.45, Col.B + (1 - Col.B) * 0.45, 0.95);
+
+    Txt := UTF8String(Party.Teams[I].Players[P].Name);
+    if Warn and (NextP >= 0) and (NextP <> P) and
+       ((SDL_GetTicks() div PASS_BLINK_MS) mod 2 = 0) then
+      Txt := Format(Language.Translate('PARTY_PASS_NEXT'), [UTF8String(Party.Teams[I].Players[NextP].Name)]);
+
+    SetFontFamily(0);
+    SetFontStyle(ftBoldHighRes);
+    SetFontItalic(false);
+    SetFontSize(18);
+    SetFontColor(1, 1, 1, 1);
+    SetFontPos(X + 8, Y + (BAR_H - 18) / 2 - 1);
+    PrintText(Txt);
   end;
 end;
 

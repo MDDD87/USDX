@@ -160,6 +160,10 @@ type
     DuetVoiceScore:  array of array[0..1] of integer;  //< scores of both voices per team
     DuetTeamScore:   array of integer;  //< team score: average of both voices
 
+    // Pass the Mic (Feature 5.3): beats at which the next team member sings
+    // (computed when the song is loaded, see TScreenSingController)
+    PassChangeBeats: array of integer;
+
     property CurrentRound: Integer read CurRound;
 
     constructor Create;
@@ -275,8 +279,11 @@ type
     { Pass the Medley / Pass the Micro-Medley (Feature 5.2): after every
       section the next member of each team sings (the team mic is passed on) }
     function IsPassMedleyRound: boolean;
-    { member of team Team who sings medley section Section (0 = first) }
+    { member of team Team who sings medley section Section (0 = first);
+      also used for Pass the Mic (Section = number of changes so far) }
     function PassMedleySinger(Team, Section: integer): integer;
+    { true in Pass the Mic, Pass the Medley and Pass the Micro-Medley }
+    function IsAnyPassRound: boolean;
     { lead-in before a party medley section in seconds (time to pass the mic) }
     function MedleyLeadIn: integer;
 
@@ -438,6 +445,7 @@ begin
   SetLength(DuetSinger, 0);
   SetLength(DuetVoiceScore, 0);
   SetLength(DuetTeamScore, 0);
+  SetLength(PassChangeBeats, 0);
 
   for I := 0 to High(Best) do
   begin
@@ -912,6 +920,13 @@ begin
   begin
     IncTimesPlayed;
 
+    // Pass the Mic: the other members who sang count, too
+    if IsTeamScoreRound then
+      for I := 0 to High(Teams) do
+        for J := 1 to Length(Teams[I].Players) - 1 do
+          if (J <= Length(PassChangeBeats)) then
+            Inc(Teams[I].Players[PassMedleySinger(I, J)].TimesPlayed);
+
     // Pass the Medley: the other members who sang a section count, too
     if IsPassMedleyRound then
       for I := 0 to High(Teams) do
@@ -1288,6 +1303,11 @@ begin
     Section := 0;
   // starts with the member chosen for this round, then in turn
   Result := (Teams[Team].NextPlayer + Section) mod N;
+end;
+
+function TPartyGame.IsAnyPassRound: boolean;
+begin
+  Result := IsTeamScoreRound or IsPassMedleyRound;
 end;
 
 function TPartyGame.MedleyLeadIn: integer;
