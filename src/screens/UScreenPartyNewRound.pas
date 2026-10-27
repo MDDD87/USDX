@@ -109,6 +109,7 @@ type
         singers with mic and voice); SetDuetLayout(false) restores the
         normal layout }
       procedure SetDuetLayout(Announce: boolean);
+      procedure ShowPassMedleyOrder;
   end;
 
 const
@@ -225,6 +226,11 @@ begin
 
       // update texts:
       Text[TextRound[I]].Text := IntToStr(I + 1 + N)+') ' + Language.Translate('MODE_' + uppercase(Party.Modes[Party.Rounds[I + N].Mode].Name) + '_NAME');
+      // long names (e.g. "Pass the Micro-Medley") must not run into the winner column
+      if (LengthUTF8(Text[TextRound[I]].Text) > 17) then
+        Text[TextRound[I]].Size := Theme.PartyNewRound.TextRound1.Size * 17 / LengthUTF8(Text[TextRound[I]].Text)
+      else
+        Text[TextRound[I]].Size := Theme.PartyNewRound.TextRound1.Size;
       Text[TextWinner[I]].Text := Party.GetWinnerString(I + N);
     end
     else
@@ -492,7 +498,36 @@ begin
 
   SetDuetLayout(false);
   if Party.IsDuetRound then
-    ShowDuet;
+    ShowDuet
+  else if Party.IsPassMedleyRound then
+    ShowPassMedleyOrder;
+end;
+
+{ Pass the Medley: the order of the singers of each team ("Anna, Toni") }
+procedure TScreenPartyNewRound.ShowPassMedleyOrder;
+var
+  T, J, N: integer;
+  Names: UTF8String;
+  NameText: array[0..2] of cardinal;
+begin
+  NameText[0] := TextNextPlayer1;
+  NameText[1] := TextNextPlayer2;
+  NameText[2] := TextNextPlayer3;
+  for T := 0 to High(Party.Teams) do
+    if (T <= 2) then
+    begin
+      Names := '';
+      N := Length(Party.Teams[T].Players);
+      for J := 0 to N - 1 do
+      begin
+        if (Names <> '') then
+          Names := Names + ', ';
+        Names := Names + ShortenName(UTF8String(Party.Teams[T].Players[Party.PassMedleySinger(T, J)].Name), 8);
+      end;
+      Text[NameText[T]].Text := Names;
+      Text[NameText[T]].Size := 18;
+      Text[NameText[T]].Y := Text[NameText[T]].Y + 6;
+    end;
 end;
 
 procedure TScreenPartyNewRound.SetDuetLayout(Announce: boolean);

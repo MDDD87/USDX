@@ -268,8 +268,17 @@ type
       shown and saved under the team name. }
     function IsTeamScoreRound: boolean;
 
-    { true if the current round is a medley or micro medley round }
+    { true if the current round is a medley or micro medley round
+      (including Pass the Medley / Pass the Micro-Medley) }
     function IsAnyMedleyRound: boolean;
+
+    { Pass the Medley / Pass the Micro-Medley (Feature 5.2): after every
+      section the next member of each team sings (the team mic is passed on) }
+    function IsPassMedleyRound: boolean;
+    { member of team Team who sings medley section Section (0 = first) }
+    function PassMedleySinger(Team, Section: integer): integer;
+    { lead-in before a party medley section in seconds (time to pass the mic) }
+    function MedleyLeadIn: integer;
 
     { duet rounds (Feature 4, game/plugins/duet.usdx) }
     function IsDuetRound: boolean;
@@ -358,6 +367,7 @@ const
   PARTY_MICROMEDLEY_SONGS   = 8;
   PARTY_MICROMEDLEY_SECONDS = 15;
   PARTY_MEDLEY_LEADIN       = 3;
+  PARTY_PASSMEDLEY_LEADIN   = 5; // Pass the Medley: time to pass the mic
 
   { amount of jokers each team gets at the beginning of the game }
   Party_Count_Jokers = 5;
@@ -895,12 +905,19 @@ end;
   returns the number of the current round or -1 if last round has already
   been played }
 function TPartyGame.NextRound: integer;
-  var I: Integer;
+  var I, J: Integer;
 begin
   // some lines concerning the previous round
   if (CurRound >= 0) then
   begin
     IncTimesPlayed;
+
+    // Pass the Medley: the other members who sang a section count, too
+    if IsPassMedleyRound then
+      for I := 0 to High(Teams) do
+        for J := 1 to Length(Teams[I].Players) - 1 do
+          if (J < MedleySongCount) then
+          Inc(Teams[I].Players[PassMedleySinger(I, J)].TimesPlayed);
 
     // duet round: the second singer of each team has sung, too
     if IsDuetRound then
@@ -1248,7 +1265,37 @@ end;
 
 function TPartyGame.IsAnyMedleyRound: boolean;
 begin
-  Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley');
+  Result := (CurrentModeName = 'medley') or (CurrentModeName = 'micromedley') or
+    IsPassMedleyRound;
+end;
+
+function TPartyGame.IsPassMedleyRound: boolean;
+begin
+  Result := (CurrentModeName = 'passthemedley') or (CurrentModeName = 'passthemicromedley');
+end;
+
+function TPartyGame.PassMedleySinger(Team, Section: integer): integer;
+var
+  N: integer;
+begin
+  Result := -1;
+  if (Team < 0) or (Team > High(Teams)) then
+    Exit;
+  N := Length(Teams[Team].Players);
+  if (N = 0) then
+    Exit;
+  if (Section < 0) then
+    Section := 0;
+  // starts with the member chosen for this round, then in turn
+  Result := (Teams[Team].NextPlayer + Section) mod N;
+end;
+
+function TPartyGame.MedleyLeadIn: integer;
+begin
+  if IsPassMedleyRound then
+    Result := PARTY_PASSMEDLEY_LEADIN
+  else
+    Result := PARTY_MEDLEY_LEADIN;
 end;
 
 function TPartyGame.RoundPoints(Team: integer): integer;
@@ -1315,7 +1362,7 @@ end;
 
 function TPartyGame.MedleySongCount: integer;
 begin
-  if (CurrentModeName = 'micromedley') then
+  if (CurrentModeName = 'micromedley') or (CurrentModeName = 'passthemicromedley') then
     Result := PARTY_MICROMEDLEY_SONGS
   else
     Result := PARTY_MEDLEY_SONGS;
@@ -1323,7 +1370,7 @@ end;
 
 function TPartyGame.MedleySectionSeconds: integer;
 begin
-  if (CurrentModeName = 'micromedley') then
+  if (CurrentModeName = 'micromedley') or (CurrentModeName = 'passthemicromedley') then
     Result := PARTY_MICROMEDLEY_SECONDS
   else
     Result := PARTY_MEDLEY_SECONDS;
@@ -1337,7 +1384,8 @@ end;
 function TPartyGame.GetScoreName(Team: integer): UTF8String;
 begin
   Result := '';
-  if IsTeamScoreRound then
+  // Pass the Mic and Pass the Medley: the score belongs to the team
+  if IsTeamScoreRound or IsPassMedleyRound then
   begin
     if (Team >= 0) and (Team <= High(Teams)) then
       Result := UTF8String(Trim(Teams[Team].Name));
@@ -1376,7 +1424,19 @@ begin
 end;
 
 function TPartyGame.GetSingerName(Team: integer): UTF8String;
+var
+  P: integer;
 begin
+  // Pass the Medley: the member who sings the current section
+  if IsPassMedleyRound and (Team >= 0) and (Team <= High(Teams)) then
+  begin
+    Result := '';
+    P := PassMedleySinger(Team, PlaylistMedley.CurrentMedleySong - 1);
+    if (P >= 0) and (P <= High(Teams[Team].Players)) then
+      Result := UTF8String(Trim(Teams[Team].Players[P].Name));
+    Exit;
+  end;
+
   // duet round: Player[Team] is voice Team of the team that sings
   if IsDuetRound and (ScreenSong.Mode in [smPartyClassic, smPartyFree]) then
   begin

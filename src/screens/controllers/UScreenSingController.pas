@@ -86,6 +86,7 @@ type
     procedure SaveLocalScores;
     function PartyRoundSavesHighscores: boolean;
     function PartyDuetRound: boolean;
+    procedure ShowPassMedleySingers;
     function GetHighscoreName(PlayerIndex: integer): UTF8String;
     procedure RecordPartyPerformances;
   public
@@ -1042,7 +1043,7 @@ begin
   if (Length(CurrentSong.Tracks) = 0) then
     Exit;
 
-  CurrentSong.Medley.FadeIn_time := PARTY_MEDLEY_LEADIN;
+  CurrentSong.Medley.FadeIn_time := Party.MedleyLeadIn;
 
   SectionStart := CurrentSong.Medley.StartBeat;
   MaxEndTime := GetTimeFromBeat(SectionStart) + Party.MedleySectionSeconds;
@@ -1189,6 +1190,10 @@ begin
     else
       Text[screenSingViewRef.SongNameText].Text := CurrentSong.Artist + ' - ' + CurrentSong.Title;
 
+    // Pass the Medley: who sings this section (the team mic is passed on)
+    if ScreenSong.PartyMedley and Party.IsPassMedleyRound then
+      ShowPassMedleySingers;
+
     //medley start and end timestamps
     StartNote := FindNote(CurrentSong.Medley.StartBeat - round(CurrentSong.BPM*CurrentSong.Medley.FadeIn_time/60));
     MedleyStart := GetTimeFromBeat(CurrentSong.Tracks[0].Lines[StartNote.line].Notes[0].StartBeat);
@@ -1203,7 +1208,7 @@ begin
     // countdown (the code above may start a whole lyrics line earlier)
     if ScreenSong.PartyMedley then
     begin
-      MedleyStart := GetTimeFromBeat(CurrentSong.Medley.StartBeat) - PARTY_MEDLEY_LEADIN;
+      MedleyStart := GetTimeFromBeat(CurrentSong.Medley.StartBeat) - Party.MedleyLeadIn;
       if MedleyStart < 0 then
         MedleyStart := 0;
     end;
@@ -2042,6 +2047,25 @@ end;
 function TScreenSingController.PartyRoundSavesHighscores: boolean;
 begin
   Result := Party.bPartyGame and Party.RoundSavesHighscores;
+end;
+
+{ Pass the Medley: message with the singer of each team for this section }
+procedure TScreenSingController.ShowPassMedleySingers;
+var
+  I: integer;
+  Names: UTF8String;
+begin
+  Names := '';
+  for I := 0 to PlayersPlay - 1 do
+  begin
+    if (Names <> '') then
+      Names := Names + ', ';
+    Names := Names + Party.GetSingerName(I);
+  end;
+  if (PlaylistMedley.CurrentMedleySong <= 1) then
+    screenSingViewRef.WriteMessage(Format(Language.Translate('PARTY_PASSMEDLEY_FIRST'), [Names]))
+  else
+    screenSingViewRef.WriteMessage(Format(Language.Translate('PARTY_PASSMEDLEY_PASS'), [Names]));
 end;
 
 function TScreenSingController.PartyDuetRound: boolean;

@@ -1086,11 +1086,15 @@ begin
     ScreenSing.PlayerDuetNames[2] := ScreenSing.PlayerNames[2];
   end
   else
-    // other rounds: the team names again (after a duet round)
+    // other rounds: the team names again (after a duet round); Pass the
+    // Medley: the member who sings the current section
     for N := 1 to PlayersPlay do
       if (N - 1 <= High(Party.Teams)) and (Party.Teams[N-1].Name <> '') then
       begin
-        ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
+        if Party.IsPassMedleyRound and (Party.GetSingerName(N-1) <> '') then
+          ScreenSing.PlayerNames[N] := ShortenName(Party.GetSingerName(N-1), PARTY_TEAMNAME_MAXLEN)
+        else
+          ScreenSing.PlayerNames[N] := ShortenName(UTF8String(Party.Teams[N-1].Name), PARTY_TEAMNAME_MAXLEN);
         ScreenSing.PlayerDuetNames[N] := ScreenSing.PlayerNames[N];
       end;
 
