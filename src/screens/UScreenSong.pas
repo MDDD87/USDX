@@ -105,6 +105,7 @@ type
       PartyHiddenDuets: array of integer;
       // time of the last joker (against double key events)
       LastJokerTime: cardinal;
+      LastJokerTeam: integer;
       PartyMedleyFailedRound: integer; // round in which a medley could not be built
 
       //Video Icon Mod
@@ -4524,9 +4525,11 @@ procedure TScreenSong.DoJoker (Team: integer; SDL_ModState: Word);
 begin
   // one key press can arrive twice (key event and text event of SDL), which
   // used two jokers: ignore a second joker within a short time
-  if (SDL_GetTicks() - LastJokerTime < 400) then
+  // (only for the same team: two teams may use a joker at the same time)
+  if (Team = LastJokerTeam) and (SDL_GetTicks() - LastJokerTime < 400) then
     Exit;
   LastJokerTime := SDL_GetTicks();
+  LastJokerTeam := Team;
 
   if (Mode = smPartyClassic) and
      (High(Party.Teams) >= Team) and

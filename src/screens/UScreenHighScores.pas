@@ -525,14 +525,24 @@ end;
 { party duet round: only the team entries ("A & B") are shown, not the single
   voices (they stay in the database; this only changes the loaded list) }
 procedure TScreenHighScores.KeepOnlyDuetTeamScores;
+const
+  // the team entries (average) are often below the single voices: read
+  // enough entries so that the best team entries are not cut off
+  DUET_READ_ENTRIES = 1000;
 var
   D, I, N: integer;
 begin
+  try
+    DataBase.ReadScore(CurrentSong, DUET_READ_ENTRIES);
+  except
+    // keep the list loaded before
+  end;
   for D := 0 to High(CurrentSong.Score) do
   begin
     N := 0;
     for I := 0 to High(CurrentSong.Score[D]) do
-      if (CurrentSong.Score[D, I].TrackMask = PARTY_DUET_SCORE_TRACKMASK) then
+      if (CurrentSong.Score[D, I].TrackMask = PARTY_DUET_SCORE_TRACKMASK) and
+         (N < Theme.HighScores.List.MaxEntries) then
       begin
         CurrentSong.Score[D, N] := CurrentSong.Score[D, I];
         Inc(N);
