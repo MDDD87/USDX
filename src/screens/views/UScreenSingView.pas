@@ -76,6 +76,9 @@ type
 
     // party mode: avatar boxes that show the team number (render coordinates)
     PartyNumberCount: integer;
+    // rounded white bar (tinted) for the Pass rounds, loaded on first use
+    PassBarTex: TTexture;
+    PassBarTexX2: real; // right texture coordinate of the whole bar
     PartyNumberBox: array [0..2] of record
       X, Y, W, H: real;
       Num: integer;
@@ -208,6 +211,7 @@ type
     procedure PreparePartyTeamNumbers();
     procedure DrawPartyTeamNumbers();
     procedure DrawPassBars();
+    procedure DrawPassBar(X, Y, W, H, Part: real; R, G, B, Alpha: real);
     procedure DrawCountdown(timeDiff: real);
     function Draw: boolean;
 
@@ -1216,13 +1220,15 @@ begin
       Continue;
 
     X := PartyNumberBox[I].X;
-    Y := PartyNumberBox[I].Y + PartyNumberBox[I].H + 3;
+    // a little below the team name
+    Y := PartyNumberBox[I].Y + PartyNumberBox[I].H + 9;
     Col := GetPlayerColor(Ini.SingColor[I]);
 
-    // bar in the team color, the filled part lighter
-    Renderer.DrawQuad(X, Y, 0, BAR_W, BAR_H, Col.R, Col.G, Col.B, 0.9);
+    // rounded bar in the team color (like the tabs in SingStar), the filled
+    // part lighter
+    DrawPassBar(X, Y, BAR_W, BAR_H, 1, Col.R, Col.G, Col.B, 0.9);
     if (Progress > 0) then
-      Renderer.DrawQuad(X, Y, 0, BAR_W * Progress, BAR_H,
+      DrawPassBar(X, Y, BAR_W, BAR_H, Progress,
         Col.R + (1 - Col.R) * 0.45, Col.G + (1 - Col.G) * 0.45, Col.B + (1 - Col.B) * 0.45, 0.95);
 
     Txt := UTF8String(Party.Teams[I].Players[P].Name);
@@ -1238,6 +1244,36 @@ begin
     SetFontPos(X + 8, Y + (BAR_H - 18) / 2 - 1);
     PrintText(Txt);
   end;
+end;
+
+{ draws the left part Part (0..1) of the rounded bar texture, tinted }
+procedure TScreenSingView.DrawPassBar(X, Y, W, H, Part: real; R, G, B, Alpha: real);
+begin
+  if (PassBarTex = nil) then
+  begin
+    PassBarTex := Renderer.LoadTexture(Skin.GetTextureFileName('PartyTeamButton1'), TEXTURE_TYPE_TRANSPARENT, 0);
+    if (PassBarTex <> nil) then
+      PassBarTexX2 := PassBarTex.TexX2;
+  end;
+  if (PassBarTex = nil) or (Part <= 0) then
+  begin
+    if (Part > 0) then
+      Renderer.DrawQuad(X, Y, 0, W * Part, H, R, G, B, Alpha);
+    Exit;
+  end;
+  PassBarTex.X := X;
+  PassBarTex.Y := Y;
+  PassBarTex.Z := 0;
+  PassBarTex.W := W * Part;
+  PassBarTex.H := H;
+  // only the left part of the texture (texture coordinates may be < 1)
+  PassBarTex.TexX2 := PassBarTexX2 * Part;
+  PassBarTex.ColR := R;
+  PassBarTex.ColG := G;
+  PassBarTex.ColB := B;
+  PassBarTex.Alpha := Alpha;
+  PassBarTex.Reflection := false;
+  Renderer.DrawTexture(PassBarTex);
 end;
 
 procedure TScreenSingView.DrawCountIn;
