@@ -92,7 +92,8 @@ type
       TextTableRound:    integer;  //< "Round" (theme), -1 if not found
       TextTableWinner:   integer;  //< "Winner" (theme), -1 if not found
       TextDuetTeam:      cardinal; //< "<team>'s turn!"
-      TextDuetVoice:     array[0..1] of cardinal; //< "Mic 1 · sings <voice>"
+      TextDuetVoice:     array[0..1] of cardinal; //< "sings <voice>" (in the box)
+      TextDuetMic:       array[0..1] of cardinal; //< "Mic 1" (above the box)
 
 
 
@@ -325,9 +326,15 @@ begin
     1, 1, 1, 1, '', false, 0, 0, false);
   TextDuetVoice[1] := AddText(510, 362, 0, 0, Theme.PartyNewRound.TextNextRound.Font, 0, 22,
     1, 1, 1, 1, '', false, 0, 0, false);
+  TextDuetMic[0] := AddText(265, 278, 0, 0, Theme.PartyNewRound.TextNextRound.Font, 0, 22,
+    1, 1, 1, 1, '', false, 0, 0, false);
+  TextDuetMic[1] := AddText(535, 278, 0, 0, Theme.PartyNewRound.TextNextRound.Font, 0, 22,
+    1, 1, 1, 1, '', false, 0, 0, false);
   Text[TextDuetTeam].Visible := false;
   Text[TextDuetVoice[0]].Visible := false;
   Text[TextDuetVoice[1]].Visible := false;
+  Text[TextDuetMic[0]].Visible := false;
+  Text[TextDuetMic[1]].Visible := false;
 
   // label left of the boxes with the next singers
   TextSingers := AddText(Theme.PartyNewRound.StaticNextPlayer1.X - 10,
@@ -561,20 +568,32 @@ begin
   Text[TextDuetTeam].Visible := Announce;
   Text[TextDuetVoice[0]].Visible := Announce;
   Text[TextDuetVoice[1]].Visible := Announce;
+  Text[TextDuetMic[0]].Visible := Announce;
+  Text[TextDuetMic[1]].Visible := Announce;
+  // no reflection under the singer boxes in the announcement
+  Statics[StaticNextPlayer1].Reflection := not Announce and Theme.PartyNewRound.StaticNextPlayer1.Reflection;
+  Statics[StaticNextPlayer2].Reflection := not Announce and Theme.PartyNewRound.StaticNextPlayer2.Reflection;
 
   if Announce then
   begin
     // everything in the middle of the screen
-    PlaceStatic(StaticRoundBox, 160, 130, 480, 46);
-    Text[TextNextRoundNo].Y := 136;
-    PlaceStatic(StaticRuleBox, 50, 184, 700, 36);
-    Text[TextNextRound].Y := 189;
-    PlaceStatic(StaticNextPlayer1, 190, 296, 200, 60);
-    PlaceStatic(StaticNextPlayer2, 410, 296, 200, 60);
-    Text[TextNextPlayer1].X := 290;
-    Text[TextNextPlayer2].X := 510;
-    Text[TextNextPlayer1].Y := 306;
-    Text[TextNextPlayer2].Y := 306;
+    // round, song, team; "Mic 1"/"Mic 2" above the boxes, in each box the
+    // singer and below the name the voice
+    PlaceStatic(StaticRoundBox, 160, 120, 480, 46);
+    Text[TextNextRoundNo].Y := 126;
+    PlaceStatic(StaticRuleBox, 50, 172, 700, 36);
+    Text[TextNextRound].Y := 177;
+    Text[TextDuetTeam].Y := 220;
+    PlaceStatic(StaticNextPlayer1, 135, 304, 260, 84);
+    PlaceStatic(StaticNextPlayer2, 405, 304, 260, 84);
+    Text[TextNextPlayer1].X := 265;
+    Text[TextNextPlayer2].X := 535;
+    Text[TextNextPlayer1].Y := 310;
+    Text[TextNextPlayer2].Y := 310;
+    Text[TextDuetVoice[0]].X := 265;
+    Text[TextDuetVoice[1]].X := 535;
+    Text[TextDuetVoice[0]].Y := 354;
+    Text[TextDuetVoice[1]].Y := 354;
     Text[TextNextPlayer1].Visible := true;
     Text[TextNextPlayer2].Visible := true;
     Text[TextNextPlayer3].Visible := false;
@@ -644,8 +663,10 @@ begin
     Text[TextNextRound].Text := Format(Language.Translate('PARTY_DUET_SONG'), [SongName]);
     Text[TextDuetTeam].Text := Format(Language.Translate('PARTY_DUET_TURN'),
       [UTF8String(Party.Teams[Team].Name)]);
-    Text[TextDuetVoice[0]].Text := Format(Language.Translate('PARTY_DUET_VOICE'), [1, Voice1]);
-    Text[TextDuetVoice[1]].Text := Format(Language.Translate('PARTY_DUET_VOICE'), [2, Voice2]);
+    Text[TextDuetVoice[0]].Text := Format(Language.Translate('PARTY_DUET_VOICE'), [ShortenName(Voice1, 22)]);
+    Text[TextDuetVoice[1]].Text := Format(Language.Translate('PARTY_DUET_VOICE'), [ShortenName(Voice2, 22)]);
+    Text[TextDuetMic[0]].Text := Format(Language.Translate('PARTY_DUET_MIC'), [1]);
+    Text[TextDuetMic[1]].Text := Format(Language.Translate('PARTY_DUET_MIC'), [2]);
 
     Text[NameText[0]].Text := Party.DuetSingerName(Team, 0);
     Text[NameText[1]].Text := Party.DuetSingerName(Team, 1);
