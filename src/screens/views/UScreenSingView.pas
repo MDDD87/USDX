@@ -1177,6 +1177,7 @@ const
 var
   I, Step, P, NextP: integer;
   TimeToChange, Progress, FontSz: real;
+  Chars, C: integer;
   Col: TRGB;
   X, Y: real;
   Txt: UTF8String;
@@ -1240,13 +1241,20 @@ begin
     SetFontStyle(ftBoldHighRes);
     SetFontItalic(false);
     // long names get a smaller font so that they fit into the bar
+    // (estimated from the number of characters: TextWidth loads glyphs
+    //  and crashed with a range check error in UFont)
+    Chars := 0;
+    for C := 1 to Length(Txt) do
+      if (Ord(Txt[C]) and $C0) <> $80 then
+        Inc(Chars);
     FontSz := 18;
-    SetFontSize(FontSz);
-    while (FontSz > 11) and (TextWidth(Txt) > BAR_W - 14) do
+    if (Chars > 0) and (Chars * 18 * 0.6 > BAR_W - 14) then
     begin
-      FontSz := FontSz - 1;
-      SetFontSize(FontSz);
+      FontSz := Int((BAR_W - 14) / (Chars * 0.6));
+      if (FontSz < 11) then
+        FontSz := 11;
     end;
+    SetFontSize(FontSz);
     SetFontColor(1, 1, 1, 1);
     SetFontPos(X + 8, Y + (BAR_H - FontSz) / 2 - 1);
     PrintText(Txt);
