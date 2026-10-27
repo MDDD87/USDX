@@ -327,6 +327,13 @@ begin
         [Party.DuetTeamScore[I]]);
       Text[TextRoundScore[I]].Visible := true;
     end
+    else if (Length(Player) = Length(Party.Teams)) and Party.IsAnyPassRound then
+    begin
+      // the whole team sang: the team name is already shown next to it
+      Text[TextRoundScore[I]].Text := Format(Language.Translate('PARTY_SCORE_TEAM_RESULT'),
+        [Player[I].ScoreTotalInt]);
+      Text[TextRoundScore[I]].Visible := true;
+    end
     else if (Length(Player) = Length(Party.Teams)) then
     begin
       Text[TextRoundScore[I]].Text := Format(Language.Translate('PARTY_SCORE_RESULT'),
