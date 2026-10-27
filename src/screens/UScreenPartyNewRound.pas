@@ -628,7 +628,7 @@ begin
     SongName := '';
     if (Party.DuetSong >= 0) and (Party.DuetSong <= High(CatSongs.Song)) then
     begin
-      SongName := CatSongs.Song[Party.DuetSong].Artist + ' – ' + CatSongs.Song[Party.DuetSong].Title;
+      SongName := CatSongs.Song[Party.DuetSong].Artist + ' - ' + CatSongs.Song[Party.DuetSong].Title;
       if (Length(CatSongs.Song[Party.DuetSong].DuetNames) >= 2) then
       begin
         if (Trim(CatSongs.Song[Party.DuetSong].DuetNames[0]) <> '') then
