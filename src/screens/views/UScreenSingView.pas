@@ -1172,11 +1172,11 @@ procedure TScreenSingView.DrawPassBars();
 const
   PASS_WARN_SECONDS = 8;    // the bar fills up during this time
   PASS_BLINK_MS     = 1500; // change of the text
-  BAR_W = 230;
+  BAR_W = 180;
   BAR_H = 24;
 var
   I, Step, P, NextP: integer;
-  TimeToChange, Progress: real;
+  TimeToChange, Progress, FontSz: real;
   Col: TRGB;
   X, Y: real;
   Txt: UTF8String;
@@ -1239,9 +1239,16 @@ begin
     SetFontFamily(0);
     SetFontStyle(ftBoldHighRes);
     SetFontItalic(false);
-    SetFontSize(18);
+    // long names get a smaller font so that they fit into the bar
+    FontSz := 18;
+    SetFontSize(FontSz);
+    while (FontSz > 11) and (TextWidth(Txt) > BAR_W - 14) do
+    begin
+      FontSz := FontSz - 1;
+      SetFontSize(FontSz);
+    end;
     SetFontColor(1, 1, 1, 1);
-    SetFontPos(X + 8, Y + (BAR_H - 18) / 2 - 1);
+    SetFontPos(X + 8, Y + (BAR_H - FontSz) / 2 - 1);
     PrintText(Txt);
   end;
 end;

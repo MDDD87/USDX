@@ -205,7 +205,7 @@ type
 
       procedure FillPlayerItems(PlayerNumber: integer);
       function  IsPartyRound: boolean;
-      procedure HideAvatarFrames(AvatarStatic: integer);
+      procedure HideAvatarFrames(ThemePlayer: integer);
       function  GetPlayerDisplayName(PlayerIndex: integer): UTF8String;
       procedure LeaveScreen;
 
@@ -829,7 +829,7 @@ begin
         Text[TextTotalScore[I + 1 + Max]].ColG := Col.G;
         Text[TextTotalScore[I + 1 + Max]].ColB := Col.B;
       end;
-      if((PlayersPlay > Max) and (Screen = 2)) then
+      if((PlayersPlay > Max) and (Screen = 2) and not IsPartyRound) then
       begin
         Statics[AvatarStaticRef[PlayersPlay-Max+I+1]].Visible:=true;
       end
@@ -1413,14 +1413,16 @@ begin
 
   // party mode: players have no avatars, the avatar picture would only be an
   // empty placeholder (the team is shown by its color)
+  // (the avatar statics are created for the player count at screen creation,
+  // so in a duet round of a 3 team party the frames are looked up by theme)
   if IsPartyRound then
-    for I := 1 to PlayersPlay do
-      if (I <= High(AvatarStaticRef)) and (AvatarStaticRef[I] >= 0) and
-         (AvatarStaticRef[I] <= High(Statics)) then
-      begin
+  begin
+    for I := 1 to UIni.IMaxPlayerCount do
+      if (AvatarStaticRef[I] >= 0) and (AvatarStaticRef[I] <= High(Statics)) then
         Statics[AvatarStaticRef[I]].Visible := false;
-        HideAvatarFrames(AvatarStaticRef[I]);
-      end;
+    for I := 1 to 6 do
+      HideAvatarFrames(I);
+  end;
 
   // party duet round: result of the team (average of both voices)
   Text[TextDuetResult].Visible := IsPartyRound and Party.IsDuetRound and
@@ -1592,27 +1594,26 @@ end;
 { party mode: hides the frames around a (hidden) avatar picture. The frames
   are separate theme statics; they are found by position: a frame encloses
   the avatar box and is not much larger than it. }
-procedure TScreenScore.HideAvatarFrames(AvatarStatic: integer);
+procedure TScreenScore.HideAvatarFrames(ThemePlayer: integer);
 var
-  P, J, I: integer;
+  J, I: integer;
   AX, AY, AW, AH: single;
 begin
-  if (Statics[AvatarStatic].Texture = nil) then
+  if (ThemePlayer < Low(PlayerStatic)) or (ThemePlayer > High(PlayerStatic)) then
     Exit;
-  AX := Statics[AvatarStatic].Texture.X;
-  AY := Statics[AvatarStatic].Texture.Y;
-  AW := Statics[AvatarStatic].Texture.W;
-  AH := Statics[AvatarStatic].Texture.H;
+  AX := Theme.Score.AvatarStatic[ThemePlayer].X;
+  AY := Theme.Score.AvatarStatic[ThemePlayer].Y;
+  AW := Theme.Score.AvatarStatic[ThemePlayer].W;
+  AH := Theme.Score.AvatarStatic[ThemePlayer].H;
   if (AW <= 0) or (AH <= 0) then
     Exit;
   // only the player statics (their visibility is set again in every OnShow)
-  for P := Low(PlayerStatic) to High(PlayerStatic) do
-  for J := 0 to High(PlayerStatic[P]) do
+  for J := 0 to High(PlayerStatic[ThemePlayer]) do
   begin
-    I := PlayerStatic[P, J];
+    I := PlayerStatic[ThemePlayer, J];
     if (I < 0) or (I > High(Statics)) then
       Continue;
-    if (I <> AvatarStatic) and (Statics[I].Texture <> nil) and
+    if (Statics[I].Texture <> nil) and
        (Statics[I].Texture.X <= AX + 1) and (Statics[I].Texture.Y <= AY + 1) and
        (Statics[I].Texture.X + Statics[I].Texture.W >= AX + AW - 1) and
        (Statics[I].Texture.Y + Statics[I].Texture.H >= AY + AH - 1) and
