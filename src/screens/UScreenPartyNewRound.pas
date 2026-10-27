@@ -499,7 +499,8 @@ begin
   SetDuetLayout(false);
   if Party.IsDuetRound then
     ShowDuet
-  else if Party.IsPassMedleyRound then
+  else if Party.IsAnyPassRound then
+    // Pass the Mic / Pass the Medley: the members in the order they sing
     ShowPassMedleyOrder;
 end;
 
