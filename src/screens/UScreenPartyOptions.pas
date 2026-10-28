@@ -76,6 +76,7 @@ type
       procedure LoadPlaylistCovers;
       procedure FreePlaylistCovers;
       procedure DrawCarousel;
+      function CarouselShown: boolean;
       procedure DrawCover(Index: integer; CX, CY, Size, Alpha: real);
     public
       constructor Create; override;
@@ -162,8 +163,25 @@ begin
       // Up and Down could be done at the same time,
       // but I don't want to declare variables inside
       // functions like this one, called so many times
-      SDLK_DOWN:    InteractNext;
-      SDLK_UP:      InteractPrev;
+      // the hidden "Playlist" row is reached via the cover carousel
+      SDLK_DOWN:
+        begin
+          if (Interaction = SelectPlayList) and CarouselShown then
+            Interaction := SelectPlayList2
+          else if (Interaction = SelectPlayList2) and CarouselShown then
+            Interaction := SelectMode
+          else
+            InteractNext;
+        end;
+      SDLK_UP:
+        begin
+          if (Interaction = SelectPlayList2) and CarouselShown then
+            Interaction := SelectPlayList
+          else if (Interaction = SelectMode) and CarouselShown then
+            Interaction := SelectPlayList2
+          else
+            InteractPrev;
+        end;
       SDLK_RIGHT:
         begin
           AudioPlayback.PlaySound(SoundLib.Option);
@@ -333,6 +351,14 @@ begin
 
   Playlist2 := 0;
   UpdateSelectSlideOptions(SelectPlayList2, IPlaylist2, Playlist2);
+
+  // with playlists the cover carousel replaces the "Playlist" row
+  SelectsS[Interactions[SelectPlayList2].Num].Visible := not CarouselShown;
+end;
+
+function TScreenPartyOptions.CarouselShown: boolean;
+begin
+  Result := (Playlist = 2) and (Length(PlaylistMan.Playlists) > 0);
 end;
 
 procedure TScreenPartyOptions.OnShow;
@@ -554,6 +580,9 @@ begin
       else
         CX := CENTER_X + (150 + (Abs(D) - 1) * 115);
     CY := TOP_Y + (BIG - Size) / 2;
+    // highlight frame around the selected cover while the carousel is active
+    if (Order[Off] = 0) and (Interaction = SelectPlayList2) then
+      Renderer.DrawQuad(CX - Size / 2 - 8, CY - 8, 0, Size + 16, Size + 16, 0.55, 0.85, 1, 0.9);
     Alpha := 1 - 0.3 * Abs(D);
     if Alpha < 0.25 then
       Alpha := 0.25;
