@@ -442,7 +442,7 @@ var
   X: real;
   Name, Line, Wd: UTF8String;
   Lines: array of UTF8String;
-  I, MaxChars, L: integer;
+  I, MaxChars, L, MaxWordLen, Cnt: integer;
   FontSz, TY: real;
 
   function CharCount(const S: UTF8String): integer;
@@ -481,8 +481,23 @@ begin
   Renderer.DrawQuad(X, CY, 0, Size, Size * 0.18, 0.15, 0.45, 0.80, Alpha);
 
   Name := PlaylistMan.Playlists[Index].Name;
+  // estimated character width (bold font, measured on screen): about 0.43
+  // of the font size; 0.47 is used for fitting to keep a small margin
   FontSz := Size / 7;
-  MaxChars := Trunc((Size - 12) / (FontSz * 0.6));
+  MaxWordLen := 0;
+  Cnt := 0;
+  for I := 1 to Length(Name) + 1 do
+    if (I > Length(Name)) or (Name[I] = ' ') then
+    begin
+      if Cnt > MaxWordLen then
+        MaxWordLen := Cnt;
+      Cnt := 0;
+    end
+    else if (Ord(Name[I]) and $C0) <> $80 then
+      Inc(Cnt);
+  if (MaxWordLen > 0) and (MaxWordLen * FontSz * 0.47 > Size - 16) then
+    FontSz := (Size - 16) / (MaxWordLen * 0.47);
+  MaxChars := Trunc((Size - 16) / (FontSz * 0.47));
   if MaxChars < 4 then
     MaxChars := 4;
 
@@ -526,7 +541,7 @@ begin
   TY := CY + Size * 0.18 + (Size * 0.82 - Length(Lines) * FontSz * 1.15) / 2;
   for L := 0 to High(Lines) do
   begin
-    SetFontPos(CX - CharCount(Lines[L]) * FontSz * 0.3, TY + L * FontSz * 1.15);
+    SetFontPos(CX - CharCount(Lines[L]) * FontSz * 0.43 / 2, TY + L * FontSz * 1.15);
     PrintText(Lines[L]);
   end;
 end;
