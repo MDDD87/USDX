@@ -61,7 +61,6 @@ type
       FadeEnabled:   boolean;  // true if fading is enabled
       FadeFailed:    boolean;  // true if fading is possible (enough memory, etc.)
       FadeStartTime: cardinal; // time when fading starts, 0 means that the fade texture must be initialized
-      DoneOnShow:    boolean;  // true if passed onShow after fading
 
       FadeTex:       array[0..1] of TTexture;
       TexW, TexH:    Cardinal;
@@ -89,6 +88,7 @@ type
       procedure UpdateCursorFade;
 
     public
+      DoneOnShow:    boolean;  // true if passed onShow after fading (public: reset by TMenu.FadeTo)
       Cursor_HiddenByScreen: boolean; // hides software cursor and deactivate auto fade in, must be public for access in UMenuButton
 
       NextScreen:          PMenu;

@@ -1479,6 +1479,10 @@ end;
 
 procedure TMenu.FadeTo(Screen: PMenu);
 begin
+  // a new target while still fading (e.g. a key pressed quickly during the
+  // fade): its OnShow has to be called, otherwise it shows old contents
+  if (Display.NextScreen <> nil) and (Display.NextScreen <> Screen) then
+    Display.DoneOnShow := false;
   Display.Fade := 0;
   Display.NextScreen := Screen;
 end;
