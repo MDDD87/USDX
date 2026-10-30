@@ -308,6 +308,8 @@ begin
   SoundLib.StartBgMusic;
 
   ScreenSong.Mode := smNormal;
+  // normal mode starts with all songs (not the playlist of the last party)
+  ScreenSong.ResetToAllSongs;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenMains');

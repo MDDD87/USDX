@@ -286,6 +286,7 @@ type
       procedure ShowCatTL(Cat: integer);// Show Cat in Top left
       procedure ShowCatTLCustom(Caption: UTF8String);// Show Custom Text in Top left
       procedure HideCatTL;// Show Cat in Tob left
+      procedure ResetToAllSongs;
       procedure Refresh;//(GiveStats: boolean); //Refresh Song Sorting
       procedure ChangeMusic;
 
@@ -459,6 +460,21 @@ begin
   //Show
   Text[TextCat].Visible := true;
   Statics[StaticCat].Visible := true;
+end;
+
+{ normal mode always starts with all songs: a playlist or category chosen in
+  a party game (or before) is closed, a fixed playlist order is undone }
+procedure TScreenSong.ResetToAllSongs;
+begin
+  if (PlaylistMan.CurPlayList = -1) and (PlaylistMan.Mode = smAll) and
+     (CatSongs.CatNumShow = -1) then
+    Exit;
+  PlaylistMan.UnsetPlaylist;
+  PlaylistMan.Mode := smAll;
+  PlaylistMan.RestoreSongOrder;
+  CatSongs.SetFilter('', fltAll);
+  HideCatTL;
+  Interaction := 0;
 end;
 
 procedure TScreenSong.HideCatTL;
