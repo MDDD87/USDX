@@ -290,6 +290,7 @@ type
     { duet rounds (Feature 4, game/plugins/duet.usdx) }
     function IsDuetRound: boolean;
     { true if the party song pool contains a duet song }
+    function SoloSongCount(Max: integer): integer;
     function DuetSongAvailable: boolean;
     { name of the member of team Team who sings voice Voice (0 = P1, 1 = P2) }
     function DuetSingerName(Team, Voice: integer): UTF8String;
@@ -649,6 +650,16 @@ begin
 
       for J := 0 to High(Teams) do
         Result := Result and (Modes[I].PlayerCount and (1 shl (Length(Teams[J].Players) - 1)) <> 0);
+
+      // all other round types use solo songs only (duets are hidden there):
+      // the song pool (playlist/category) needs at least one, a medley two
+      if Result then
+      begin
+        if (Pos('medley', LowerCase(Modes[I].Name)) > 0) then
+          Result := (SoloSongCount(2) >= 2)
+        else
+          Result := (SoloSongCount(1) >= 1);
+      end;
     end
     else
       Result := false;
@@ -1476,6 +1487,22 @@ end;
 function TPartyGame.IsDuetRound: boolean;
 begin
   Result := (CurrentModeName = 'duet');
+end;
+
+{ number of solo (non duet) songs in the party song pool, counting stops at Max }
+function TPartyGame.SoloSongCount(Max: integer): integer;
+var
+  I: integer;
+begin
+  Result := 0;
+  for I := 0 to High(CatSongs.Song) do
+    if not CatSongs.Song[I].Main and not CatSongs.Song[I].isDuet and
+       ScreenSong.InPartySongPool(I) then
+    begin
+      Inc(Result);
+      if (Result >= Max) then
+        Exit;
+    end;
 end;
 
 function TPartyGame.DuetSongAvailable: boolean;

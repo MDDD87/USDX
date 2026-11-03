@@ -392,7 +392,10 @@ begin
 
   //Show Cat in Topleft:
   // Append order status to the displayed playlist name
-  if Playlists[Index].FixedOrder then
+  // (party mode: only the name, the songs are drawn at random anyway)
+  if ScreenSong.Mode in [smPartyClassic, smPartyFree, smPartyTournament] then
+    ScreenSong.ShowCatTLCustom(Format(Theme.Playlist.CatText,[Playlists[Index].Name]))
+  else if Playlists[Index].FixedOrder then
     ScreenSong.ShowCatTLCustom(Format(Theme.Playlist.CatText,[Playlists[Index].Name + '  [Fixed Order: On]']))
   else
     ScreenSong.ShowCatTLCustom(Format(Theme.Playlist.CatText,[Playlists[Index].Name + '  [Fixed Order: Off]']));

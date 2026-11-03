@@ -1191,7 +1191,17 @@ end;
 procedure TScreenScore.OnHide;
 begin
   inherited;
-  FinishScoreSounds;
+  // OnHide runs after the OnShow of the next screen: the song selection has
+  // already paused the background music and starts the song preview, so the
+  // background music must not be started again in that case
+  if (Display.NextScreen = @ScreenSong) then
+  begin
+    AudioPlayback.StopSound(SoundLib.ScoreDrumRoll);
+    BgMusicStarted := true;
+    SoundLib.PauseBgMusic;
+  end
+  else
+    FinishScoreSounds;
 end;
 
 procedure TScreenScore.UpdateAnimation;

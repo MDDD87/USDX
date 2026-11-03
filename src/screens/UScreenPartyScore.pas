@@ -88,6 +88,7 @@ type
       destructor Destroy; override;
       function ParseInput(PressedKey: cardinal; CharCode: UCS4Char; PressedDown: boolean): boolean; override;
       procedure OnShow; override;
+      procedure FillScreen;
       function Draw: boolean; override;
   end;
 
@@ -292,11 +293,25 @@ begin
 end;
 
 procedure TScreenPartyScore.OnShow;
+begin
+  inherited;
+  // an error while filling the screen left it with the theme placeholders
+  // ("Team 1", 3000); write the reason into Error.log
+  try
+    FillScreen;
+  except
+    on E: Exception do
+      Log.LogError('FillScreen failed: ' + E.ClassName + ': ' + E.Message +
+        ' (round ' + IntToStr(Party.CurrentRound) + ', teams ' + IntToStr(Length(Party.Teams)) +
+        ', players ' + IntToStr(Length(Player)) + ')', 'TScreenPartyScore.OnShow');
+  end;
+end;
+
+procedure TScreenPartyScore.FillScreen;
 var
   Ranking: AParty_TeamRanking;
   I: integer;
 begin
-  inherited;
 
   if not Help.SetHelpID(ID) then
     Log.LogWarn('No Entry for Help-ID ' + ID, 'ScreenPartyScore');

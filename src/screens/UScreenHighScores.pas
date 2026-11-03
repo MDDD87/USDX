@@ -85,6 +85,7 @@ type
       // sung, -1 if the player is not in the list
       OwnEntry: array of integer;
       OwnColor: array of TRGB;
+      OwnLevel: array of integer; // difficulty in which OwnEntry was searched
       EntryNumberText:   array of integer;
       EntryNameText:     array of integer;
       EntryScoreText:    array of integer;
@@ -98,6 +99,7 @@ type
       function ParseMouse(MouseButton: integer; BtnDown: boolean; X, Y: integer): boolean; override;
       procedure OnShow; override;
       procedure ShowScoresForDifficulty(difficulty: integer);
+      function AnyScoresToShow: boolean;
       procedure PlayNewHighscoreSound;
       procedure FindOwnEntries;
       function  PartyDuetRound: boolean;
@@ -508,7 +510,7 @@ begin
 
   FindOwnEntries;
 
-  if Length(CurrentSong.Score[Player[0].Level]) = 0 then
+  if not AnyScoresToShow then
     FadeTo(NextScreen) //if there are no scores to show, go to next screen
   else
     PlayNewHighscoreSound;
@@ -556,13 +558,16 @@ end;
   mode, otherwise the player color }
 procedure TScreenHighScores.FindOwnEntries;
 var
-  I, J, Level: integer;
+  I, J, K, Level: integer;
   Name: UTF8String;
   Taken: boolean;
 begin
   SetLength(OwnEntry, PlayersPlay);
   SetLength(OwnColor, PlayersPlay);
+  SetLength(OwnLevel, PlayersPlay);
   Level := Player[0].Level;
+  for I := 0 to PlayersPlay - 1 do
+    OwnLevel[I] := Level;
 
   // party duet round: the team entry "A & B" in the team color
   if PartyDuetRound and (PlayersPlay >= 2) then
@@ -590,16 +595,21 @@ begin
       Name := Party.GetScoreName(I)
     else
       Name := Player[I].Name;
+    // every player is searched in the list of his own difficulty
+    // (normal mode: players can sing with different difficulties)
+    Level := EnsureRange(Player[I].Level, 0, 2);
+    OwnLevel[I] := Level;
     if (Player[I].ScoreTotalInt <= 0) then
       Continue;
     for J := 0 to High(CurrentSong.Score[Level]) do
       if (CurrentSong.Score[Level, J].Score = Player[I].ScoreTotalInt) and
          (CurrentSong.Score[Level, J].Name = Name) then
       begin
-        // two players with the same name and score: use the next entry
+        // two players with the same name, difficulty and score: next entry
         Taken := false;
-        if (I > 0) then
-          Taken := (OwnEntry[I - 1] = J);
+        for K := 0 to I - 1 do
+          if (OwnLevel[K] = Level) and (OwnEntry[K] = J) then
+            Taken := true;
         if not Taken then
         begin
           OwnEntry[I] := J;
@@ -628,6 +638,17 @@ begin
     AudioPlayback.PlaySound(SoundLib.Applause);
 end;
 
+{ true if the list of a difficulty sung by one of the players has entries }
+function TScreenHighScores.AnyScoresToShow: boolean;
+var
+  I: integer;
+begin
+  Result := (Length(CurrentSong.Score[EnsureRange(Player[0].Level, 0, 2)]) > 0);
+  for I := 0 to High(OwnLevel) do
+    if (Length(CurrentSong.Score[OwnLevel[I]]) > 0) then
+      Result := true;
+end;
+
 procedure TScreenHighScores.ShowScoresForDifficulty(difficulty: integer);
 var
   I, P: integer;
@@ -654,9 +675,9 @@ begin
 
     // entries of the song just sung: bar in the team or player color
     Statics[EntryHighlightStatic[I]].Visible := false;
-    if (difficulty = Player[0].Level) and Statics[EntryNumberStatic[I]].Visible then
+    if Statics[EntryNumberStatic[I]].Visible then
       for P := 0 to High(OwnEntry) do
-        if (OwnEntry[P] = I) then
+        if (OwnEntry[P] = I) and (P <= High(OwnLevel)) and (OwnLevel[P] = difficulty) then
         begin
           Statics[EntryHighlightStatic[I]].Texture.ColR := OwnColor[P].R;
           Statics[EntryHighlightStatic[I]].Texture.ColG := OwnColor[P].G;
